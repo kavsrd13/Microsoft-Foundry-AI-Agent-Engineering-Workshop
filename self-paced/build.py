@@ -91,6 +91,16 @@ def render_block(block) -> str:
         return f"<h4>{inline(block['h4'])}</h4>"
     if "html" in block:
         return block["html"]
+    if "whole_file" in block:
+        # The complete script as it stands after this task, so a learner who
+        # lost track can paste the lot and carry on.
+        name = block.get("name", "the file")
+        return (
+            f'<details class="wholefile"><summary>Show the complete '
+            f"<code>{html.escape(name)}</code> after this task</summary>"
+            f'{code_block(block["whole_file"], block.get("lang", "python"))}'
+            f"</details>"
+        )
     raise ValueError(f"Unknown block: {block!r}")
 
 

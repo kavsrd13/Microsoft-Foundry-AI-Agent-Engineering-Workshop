@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>The Microsoft Agent Framework, and getting agents to work together | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-the-same-thing-the-framework-way">Task 2: The same thing, the framework way</a></li><li><a href="#task-3-tools-without-writing-a-schema">Task 3: Tools without writing a schema</a></li><li><a href="#task-4-sessions">Task 4: Sessions</a></li><li><a href="#task-5-middleware">Task 5: Middleware</a></li><li><a href="#task-6-several-agents-on-one-job">Task 6: Several agents on one job</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">The Microsoft Agent Framework, and getting agents to work together</h1>
+<p>Everything so far used the Foundry SDK directly. The Microsoft Agent Framework sits <strong>on top of</strong> it — it does not replace it, and you will see your familiar project endpoint underneath.</p>
+<p>For a single question the framework is slightly <em>more</em> code, not less. That is worth being honest about. Its value shows up in the three tasks after that.</p>
+<p>This exercise takes approximately <strong>90</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/10-agent-framework</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>agent-framework</code> 1.17 with <code>azure-ai-projects</code> <strong>2.3.0</strong> — see the warning</div></div>
+<div class="tags"><span class="tag alt">Framework</span><span class="tag">Module 3</span><span class="tag">Module 6</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Run the same task through the framework and compare it with Exercise 01.</li><li>Give an agent tools from plain Python functions, with no hand-written schema.</li><li>Save a conversation and reload it into a new session.</li><li>Intercept a request with middleware and block it before any model call.</li><li>Run three agents in sequence, then in parallel, and see why the answers differ.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>A Foundry project and chat deployment.</li><li>Python 3.11 and a <strong>fresh</strong> virtual environment.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: This exercise pins <strong>different package versions</strong> from every other one. The Agent Framework&#x27;s Foundry provider requires <code>azure-ai-projects</code> below 2.4, so this folder pins <strong>2.3.0</strong> while the others pin 2.6.0. Use a brand new virtual environment here, and never install another exercise&#x27;s requirements into it.</p></blockquote>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd labs/10-agent-framework
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre>
+<blockquote><p><strong>Tip</strong>: Installing the framework pulls in a lot of packages and takes a couple of minutes. Let it finish.</p></blockquote></li>
+<li><pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
+MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
+</code></pre></li>
+<li><p>Check you are in the right environment:</p>
+<pre><code class="language-powershell">python -c &quot;import agent_framework_foundry; print(&#x27;ok&#x27;)&quot;
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: <code>ok</code>. If this fails you are in a different exercise&#x27;s environment.</p></blockquote></li>
+<li><p>Create <code>framework_agent.py</code>. Note the imports — and that this file is <strong>async</strong>:</p>
+<pre><code class="language-python">&quot;&quot;&quot;The Microsoft Agent Framework.&quot;&quot;&quot;
+
+import asyncio
+import json
+import os
+import time
+from pathlib import Path
+
+from agent_framework import (
+    Agent,
+    AgentMiddleware,
+    AgentResponse,
+    AgentSession,
+    InMemoryHistoryProvider,
+    Message,
+)
+from agent_framework_foundry import FoundryChatClient
+from agent_framework_orchestrations import ConcurrentBuilder, SequentialBuilder
+from azure.identity.aio import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ROOT = Path(__file__).parent
+</code></pre>
+<blockquote><p><strong>Note</strong>: <code>azure.identity.aio</code> — the async version. The framework is built around async/await, which changes how you structure an application. That is a real difference, not a detail.</p></blockquote></li>
+</ol>
+<h2 id="task-2-the-same-thing-the-framework-way">Task 2: The same thing, the framework way</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">async def the_same_thing_as_before(client):
+    &quot;&quot;&quot;One question, one answer. Compare this with Lab 01.&quot;&quot;&quot;
+    print(&quot;\n=== A framework agent ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You are a council assistant. Answer in two sentences.&quot;,
+        default_options={&quot;store&quot;: False},
+    )
+
+    result = await agent.run(&quot;Why should an assistant cite its sources?&quot;)
+    print(result.text)
+
+    print(&quot;\nThree more lines than the direct SDK version in Lab 01.&quot;)
+    print(&quot;The next three tasks are what you get for them.&quot;)
+</code></pre></li>
+<li><p>Add an async main block — this is the pattern for the whole file:</p>
+<pre><code class="language-python">async def main():
+    async with DefaultAzureCredential() as credential:
+        async with FoundryChatClient(
+            project_endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+            model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+            credential=credential,
+        ) as client:
+            await the_same_thing_as_before(client)
+
+
+if __name__ == &quot;__main__&quot;:
+    asyncio.run(main())
+</code></pre></li>
+<li><pre><code class="language-powershell">python framework_agent.py
+</code></pre></li>
+<li><p>Compare it honestly with Exercise 01:</p>
+<table><thead><tr><th></th><th>Direct SDK (Exercise 01)</th><th>Agent Framework</th></tr></thead><tbody><tr><td>Lines for one question</td><td>About 14</td><td>About 17</td></tr><tr><td>Concepts</td><td>Project client, request, output</td><td>Project client, chat client, Agent, async</td></tr><tr><td>Underneath</td><td><code>azure-ai-projects</code></td><td><code>azure-ai-projects</code> — the same thing</td></tr></tbody></table>
+<blockquote><p><strong>Note</strong>: For one call the framework costs you three extra lines. Accept that rather than explaining it away. The next three tasks are what you get in return — and each of them would be a substantial amount of code to write yourself.</p></blockquote></li>
+</ol>
+<h2 id="task-3-tools-without-writing-a-schema">Task 3: Tools without writing a schema</h2>
+<ol>
+<li><p>Add these three functions:</p>
+<pre><code class="language-python">def load_orders():
+    with open(ROOT / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        return json.load(file)
+
+
+def get_order_status(order_id: str) -&gt; str:
+    &quot;&quot;&quot;Return the status of one order, for example ORD-001.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order[&quot;status&quot;]
+    return &quot;Order not found&quot;
+
+
+def get_order_total(order_id: str) -&gt; float:
+    &quot;&quot;&quot;Return the total in AUD for one order.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order[&quot;total_aud&quot;]
+    return 0.0
+
+
+# The framework reads the type hints and docstrings above to build the schema.
+# You do not write it by hand the way you did in Lab 03.
+</code></pre></li>
+<li><p>Compare that with Exercise 03, where you hand-wrote a <code>FunctionTool</code> with a JSON schema for each one.</p>
+<blockquote><p><strong>Note</strong>: Here the framework reads the <strong>type hints and the docstring</strong> to build the schema for you. <code>order_id: str</code> becomes the argument type; the docstring becomes the description the model reads. Write good docstrings — the model is the audience.</p></blockquote></li>
+</ol>
+<h2 id="task-4-sessions">Task 4: Sessions</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">async def a_conversation_that_survives_a_restart(client):
+    &quot;&quot;&quot;Sessions hold the conversation, and a session can be saved and reloaded.&quot;&quot;&quot;
+    print(&quot;\n=== Sessions ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You are a council assistant. Be brief.&quot;,
+        context_providers=[InMemoryHistoryProvider()],
+        default_options={&quot;store&quot;: False},
+    )
+
+    session = AgentSession()
+
+    result = await agent.run(&quot;My case reference is ACME-204. Remember it.&quot;,
+                             session=session)
+    print(&quot;  first turn: &quot;, result.text)
+
+    # Save the whole session to a file, then throw the object away.
+    saved = json.dumps(session.to_dict())
+    Path(&quot;data/session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
+    print(&quot;  saved the session to data/session.json&quot;)
+
+    # Rebuild it from the file. This is a different Python object.
+    restored = AgentSession.from_dict(json.loads(saved))
+    result = await agent.run(&quot;What case reference did I give you?&quot;, session=restored)
+    print(&quot;  after reload:&quot;, result.text)
+
+    # A different session knows nothing about the first one.
+    other_session = AgentSession()
+    result = await agent.run(&quot;Do you know my case reference?&quot;, session=other_session)
+    print(&quot;  other user:  &quot;, result.text)
+</code></pre></li>
+<li><p>Call it in <code>main</code>, after the first one:</p>
+<pre><code class="language-python">            await a_conversation_that_survives_a_restart(client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python framework_agent.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The reloaded session still knows ACME-204. A brand new session does not.</p></blockquote></li>
+<li><p>Look at what happened in the middle:</p>
+<pre><code class="language-python">    saved = json.dumps(session.to_dict())
+    restored = AgentSession.from_dict(json.loads(saved))
+</code></pre>
+<blockquote><p><strong>Note</strong>: The session became JSON and then became a different Python object. That is exactly what a web application does between two requests — and what Exercise 08 stored in Cosmos. Compare <code>data/session.json</code> with what you saved there.</p></blockquote></li>
+<li><details class="wholefile"><summary>Show the complete <code>framework_agent.py (functions so far)</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 10 - The Microsoft Agent Framework.
+
+Everything so far used the Foundry SDK directly. The Agent Framework sits on
+top of it and adds three things worth having: sessions, middleware and
+multi-agent workflows.
+
+This file shows all three. Note that it is ASYNC - the framework is built
+around async/await, which is a real difference in how you structure code.
+
+Run it with:  python framework_agent.py
+&quot;&quot;&quot;
+
+import asyncio
+import json
+import os
+import time
+from pathlib import Path
+
+from agent_framework import (
+    Agent,
+    AgentMiddleware,
+    AgentResponse,
+    AgentSession,
+    InMemoryHistoryProvider,
+    Message,
+)
+from agent_framework_foundry import FoundryChatClient
+from agent_framework_orchestrations import ConcurrentBuilder, SequentialBuilder
+from azure.identity.aio import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ROOT = Path(__file__).parent.parent
+
+
+# --- Task 2 -----------------------------------------------------------------
+async def the_same_thing_as_before(client):
+    &quot;&quot;&quot;One question, one answer. Compare this with Lab 01.&quot;&quot;&quot;
+    print(&quot;\n=== A framework agent ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You are a council assistant. Answer in two sentences.&quot;,
+        default_options={&quot;store&quot;: False},
+    )
+
+    result = await agent.run(&quot;Why should an assistant cite its sources?&quot;)
+    print(result.text)
+
+    print(&quot;\nThree more lines than the direct SDK version in Lab 01.&quot;)
+    print(&quot;The next three tasks are what you get for them.&quot;)
+
+
+# --- Task 3: tools ----------------------------------------------------------
+def load_orders():
+    with open(ROOT / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        return json.load(file)
+
+
+def get_order_status(order_id: str) -&gt; str:
+    &quot;&quot;&quot;Return the status of one order, for example ORD-001.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order[&quot;status&quot;]
+    return &quot;Order not found&quot;
+
+
+def get_order_total(order_id: str) -&gt; float:
+    &quot;&quot;&quot;Return the total in AUD for one order.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order[&quot;total_aud&quot;]
+    return 0.0
+
+
+# The framework reads the type hints and docstrings above to build the schema.
+# You do not write it by hand the way you did in Lab 03.
+
+
+# --- Task 4 -----------------------------------------------------------------
+async def a_conversation_that_survives_a_restart(client):
+    &quot;&quot;&quot;Sessions hold the conversation, and a session can be saved and reloaded.&quot;&quot;&quot;
+    print(&quot;\n=== Sessions ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You are a council assistant. Be brief.&quot;,
+        context_providers=[InMemoryHistoryProvider()],
+        default_options={&quot;store&quot;: False},
+    )
+
+    session = AgentSession()
+
+    result = await agent.run(&quot;My case reference is ACME-204. Remember it.&quot;,
+                             session=session)
+    print(&quot;  first turn: &quot;, result.text)
+
+    # Save the whole session to a file, then throw the object away.
+    saved = json.dumps(session.to_dict())
+    Path(&quot;data/session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
+    print(&quot;  saved the session to data/session.json&quot;)
+
+    # Rebuild it from the file. This is a different Python object.
+    restored = AgentSession.from_dict(json.loads(saved))
+    result = await agent.run(&quot;What case reference did I give you?&quot;, session=restored)
+    print(&quot;  after reload:&quot;, result.text)
+
+    # A different session knows nothing about the first one.
+    other_session = AgentSession()
+    result = await agent.run(&quot;Do you know my case reference?&quot;, session=other_session)
+    print(&quot;  other user:  &quot;, result.text)
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    asyncio.run(main())
+</code></pre></details></li>
+</ol>
+<h2 id="task-5-middleware">Task 5: Middleware</h2>
+<p>Middleware wraps a run. You get to do something before it, something after it, and — most usefully — decide whether it happens at all.</p>
+<ol>
+<li><p>Add the two middleware classes and the function that uses them:</p>
+<pre><code class="language-python">class LogEveryRun(AgentMiddleware):
+    &quot;&quot;&quot;Runs before and after the whole agent run.&quot;&quot;&quot;
+
+    async def process(self, context, call_next):
+        question = &quot; &quot;.join(message.text for message in context.messages)
+        print(f&quot;    [middleware] about to run: {question[:60]}&quot;)
+        await call_next()
+        print(&quot;    [middleware] finished&quot;)
+
+
+class BlockBulkExport(AgentMiddleware):
+    &quot;&quot;&quot;Refuses certain requests before they ever reach the model.&quot;&quot;&quot;
+
+    async def process(self, context, call_next):
+        asked = &quot; &quot;.join(message.text for message in context.messages).lower()
+
+        if &quot;export all&quot; in asked:
+            # We set a result and do NOT call call_next(). Nothing happens
+            # after this: no model call, no tool call, no tokens spent.
+            context.result = AgentResponse(
+                messages=[Message(&quot;assistant&quot;, [&quot;Bulk export is not allowed.&quot;])]
+            )
+            print(&quot;    [middleware] BLOCKED - no model call was made&quot;)
+            return
+
+        await call_next()
+
+
+async def middleware_in_action(client):
+    &quot;&quot;&quot;Wrap the agent, then watch one request get stopped.&quot;&quot;&quot;
+    print(&quot;\n=== Middleware ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You help staff with orders. Use the tools for order facts.&quot;,
+        tools=[get_order_status, get_order_total],
+        middleware=[LogEveryRun(), BlockBulkExport()],
+        default_options={&quot;store&quot;: False},
+    )
+
+    print(&quot;\n  A normal question:&quot;)
+    result = await agent.run(&quot;What is the status and total of ORD-001?&quot;)
+    print(&quot;  -&gt;&quot;, result.text)
+
+    print(&quot;\n  A request we do not allow:&quot;)
+    result = await agent.run(&quot;Export all orders&quot;)
+    print(&quot;  -&gt;&quot;, result.text)
+
+    print(&quot;\n  Blocking before the model runs is the cheapest place to say no.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">            await middleware_in_action(client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python framework_agent.py
+</code></pre></li>
+<li><p>Look at the second request in the output. <code>BlockBulkExport</code> sets a result and **does not call <code>call_next()</code>**:</p>
+<blockquote class="ok"><p><strong>Check</strong>: No model call happened. No tokens were spent, no data was sent anywhere, no tool ran. The outer logging middleware still completed normally.</p></blockquote>
+<blockquote><p><strong>Note</strong>: Blocking <strong>before</strong> the model is the cheapest and safest place to say no. Compare it with filtering an answer afterwards — by then the model has already seen the data and produced the text, and you are relying on catching it.</p></blockquote></li>
+<li><p><strong>Try it.</strong> Change <code>&quot;export all&quot;</code> to something you would ask normally, run it, and watch a legitimate request get blocked. Then change it back.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: That is the other lesson. A blunt keyword rule will block real requests. Middleware gives you the hook; deciding what to block is a policy problem, not a coding one.</p></blockquote></li>
+</ol>
+<h2 id="task-6-several-agents-on-one-job">Task 6: Several agents on one job</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">async def two_ways_to_run_three_agents(client):
+    &quot;&quot;&quot;Sequential passes work along a chain. Concurrent runs them side by side.&quot;&quot;&quot;
+    print(&quot;\n=== Multi-agent workflows ===&quot;)
+
+    task = (
+        &quot;Prepare a short briefing for the service manager from this order data: &quot;
+        + json.dumps(load_orders()[:5])
+    )
+
+    roles = [
+        (&quot;researcher&quot;, &quot;Pull out three facts from the data you are given.&quot;),
+        (&quot;analyst&quot;, &quot;Say what those facts mean for the service. Invent nothing.&quot;),
+        (&quot;writer&quot;, &quot;Write a short briefing in Australian English.&quot;),
+    ]
+
+    for label, builder in [(&quot;sequential&quot;, SequentialBuilder),
+                           (&quot;concurrent&quot;, ConcurrentBuilder)]:
+        agents = [
+            Agent(client, name=name, instructions=instructions,
+                  default_options={&quot;store&quot;: False})
+            for name, instructions in roles
+        ]
+
+        workflow = builder(participants=agents).build()
+
+        started = time.perf_counter()
+        result = await workflow.run(task)
+        seconds = round(time.perf_counter() - started, 1)
+
+        print(f&quot;\n  --- {label}: {seconds}s ---&quot;)
+        outputs = result.get_outputs()
+        print(&quot;  &quot;, str(outputs)[:400], &quot;...&quot;)
+
+    print(&quot;\n  Sequential: the writer can use the analyst&#x27;s conclusions.&quot;)
+    print(&quot;  Concurrent: all three see only the original data.&quot;)
+    print(&quot;  That is a difference in the ANSWER, not just the speed.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">            await two_ways_to_run_three_agents(client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python framework_agent.py
+</code></pre>
+<p>The same three agents, arranged two ways.</p></li>
+<li><p><strong>Read the two outputs before you look at the timings.</strong> The difference is structural:</p>
+<table><thead><tr><th></th><th>Sequential</th><th>Concurrent</th></tr></thead><tbody><tr><td>Who sees what</td><td>Each agent sees the earlier ones&#x27; work</td><td>All three see only the original data</td></tr><tr><td>The writer can</td><td>Build on the analyst&#x27;s conclusions</td><td>Only work from the raw data</td></tr><tr><td>Result</td><td>A refined answer</td><td>Three parallel perspectives</td></tr></tbody></table>
+<blockquote class="warn"><p><strong>Caution</strong>: Concurrent is <strong>not</strong> &quot;sequential but faster&quot;. It is a different shape. For a job where later steps genuinely depend on earlier ones, it produces a worse answer however quickly it finishes.</p></blockquote></li>
+<li><p>Now look at the timings — and run it a couple more times.</p>
+<blockquote><p><strong>Note</strong>: Concurrency often helps, and sometimes does not, because throttling and network variation can dominate on a small job. One run of each is not a measurement.</p></blockquote></li>
+<li><p>The finished file:</p>
+<details class="wholefile"><summary>Show the complete <code>framework_agent.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 10 - The Microsoft Agent Framework.
+
+Everything so far used the Foundry SDK directly. The Agent Framework sits on
+top of it and adds three things worth having: sessions, middleware and
+multi-agent workflows.
+
+This file shows all three. Note that it is ASYNC - the framework is built
+around async/await, which is a real difference in how you structure code.
+
+Run it with:  python framework_agent.py
+&quot;&quot;&quot;
+
+import asyncio
+import json
+import os
+import time
+from pathlib import Path
+
+from agent_framework import (
+    Agent,
+    AgentMiddleware,
+    AgentResponse,
+    AgentSession,
+    InMemoryHistoryProvider,
+    Message,
+)
+from agent_framework_foundry import FoundryChatClient
+from agent_framework_orchestrations import ConcurrentBuilder, SequentialBuilder
+from azure.identity.aio import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ROOT = Path(__file__).parent.parent
+
+
+# --- Task 2 -----------------------------------------------------------------
+async def the_same_thing_as_before(client):
+    &quot;&quot;&quot;One question, one answer. Compare this with Lab 01.&quot;&quot;&quot;
+    print(&quot;\n=== A framework agent ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You are a council assistant. Answer in two sentences.&quot;,
+        default_options={&quot;store&quot;: False},
+    )
+
+    result = await agent.run(&quot;Why should an assistant cite its sources?&quot;)
+    print(result.text)
+
+    print(&quot;\nThree more lines than the direct SDK version in Lab 01.&quot;)
+    print(&quot;The next three tasks are what you get for them.&quot;)
+
+
+# --- Task 3: tools ----------------------------------------------------------
+def load_orders():
+    with open(ROOT / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        return json.load(file)
+
+
+def get_order_status(order_id: str) -&gt; str:
+    &quot;&quot;&quot;Return the status of one order, for example ORD-001.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order[&quot;status&quot;]
+    return &quot;Order not found&quot;
+
+
+def get_order_total(order_id: str) -&gt; float:
+    &quot;&quot;&quot;Return the total in AUD for one order.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order[&quot;total_aud&quot;]
+    return 0.0
+
+
+# The framework reads the type hints and docstrings above to build the schema.
+# You do not write it by hand the way you did in Lab 03.
+
+
+# --- Task 4 -----------------------------------------------------------------
+async def a_conversation_that_survives_a_restart(client):
+    &quot;&quot;&quot;Sessions hold the conversation, and a session can be saved and reloaded.&quot;&quot;&quot;
+    print(&quot;\n=== Sessions ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You are a council assistant. Be brief.&quot;,
+        context_providers=[InMemoryHistoryProvider()],
+        default_options={&quot;store&quot;: False},
+    )
+
+    session = AgentSession()
+
+    result = await agent.run(&quot;My case reference is ACME-204. Remember it.&quot;,
+                             session=session)
+    print(&quot;  first turn: &quot;, result.text)
+
+    # Save the whole session to a file, then throw the object away.
+    saved = json.dumps(session.to_dict())
+    Path(&quot;data/session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
+    print(&quot;  saved the session to data/session.json&quot;)
+
+    # Rebuild it from the file. This is a different Python object.
+    restored = AgentSession.from_dict(json.loads(saved))
+    result = await agent.run(&quot;What case reference did I give you?&quot;, session=restored)
+    print(&quot;  after reload:&quot;, result.text)
+
+    # A different session knows nothing about the first one.
+    other_session = AgentSession()
+    result = await agent.run(&quot;Do you know my case reference?&quot;, session=other_session)
+    print(&quot;  other user:  &quot;, result.text)
+
+
+# --- Task 5 -----------------------------------------------------------------
+class LogEveryRun(AgentMiddleware):
+    &quot;&quot;&quot;Runs before and after the whole agent run.&quot;&quot;&quot;
+
+    async def process(self, context, call_next):
+        question = &quot; &quot;.join(message.text for message in context.messages)
+        print(f&quot;    [middleware] about to run: {question[:60]}&quot;)
+        await call_next()
+        print(&quot;    [middleware] finished&quot;)
+
+
+class BlockBulkExport(AgentMiddleware):
+    &quot;&quot;&quot;Refuses certain requests before they ever reach the model.&quot;&quot;&quot;
+
+    async def process(self, context, call_next):
+        asked = &quot; &quot;.join(message.text for message in context.messages).lower()
+
+        if &quot;export all&quot; in asked:
+            # We set a result and do NOT call call_next(). Nothing happens
+            # after this: no model call, no tool call, no tokens spent.
+            context.result = AgentResponse(
+                messages=[Message(&quot;assistant&quot;, [&quot;Bulk export is not allowed.&quot;])]
+            )
+            print(&quot;    [middleware] BLOCKED - no model call was made&quot;)
+            return
+
+        await call_next()
+
+
+async def middleware_in_action(client):
+    &quot;&quot;&quot;Wrap the agent, then watch one request get stopped.&quot;&quot;&quot;
+    print(&quot;\n=== Middleware ===&quot;)
+
+    agent = Agent(
+        client,
+        instructions=&quot;You help staff with orders. Use the tools for order facts.&quot;,
+        tools=[get_order_status, get_order_total],
+        middleware=[LogEveryRun(), BlockBulkExport()],
+        default_options={&quot;store&quot;: False},
+    )
+
+    print(&quot;\n  A normal question:&quot;)
+    result = await agent.run(&quot;What is the status and total of ORD-001?&quot;)
+    print(&quot;  -&gt;&quot;, result.text)
+
+    print(&quot;\n  A request we do not allow:&quot;)
+    result = await agent.run(&quot;Export all orders&quot;)
+    print(&quot;  -&gt;&quot;, result.text)
+
+    print(&quot;\n  Blocking before the model runs is the cheapest place to say no.&quot;)
+
+
+# --- Task 6 -----------------------------------------------------------------
+async def two_ways_to_run_three_agents(client):
+    &quot;&quot;&quot;Sequential passes work along a chain. Concurrent runs them side by side.&quot;&quot;&quot;
+    print(&quot;\n=== Multi-agent workflows ===&quot;)
+
+    task = (
+        &quot;Prepare a short briefing for the service manager from this order data: &quot;
+        + json.dumps(load_orders()[:5])
+    )
+
+    roles = [
+        (&quot;researcher&quot;, &quot;Pull out three facts from the data you are given.&quot;),
+        (&quot;analyst&quot;, &quot;Say what those facts mean for the service. Invent nothing.&quot;),
+        (&quot;writer&quot;, &quot;Write a short briefing in Australian English.&quot;),
+    ]
+
+    for label, builder in [(&quot;sequential&quot;, SequentialBuilder),
+                           (&quot;concurrent&quot;, ConcurrentBuilder)]:
+        agents = [
+            Agent(client, name=name, instructions=instructions,
+                  default_options={&quot;store&quot;: False})
+            for name, instructions in roles
+        ]
+
+        workflow = builder(participants=agents).build()
+
+        started = time.perf_counter()
+        result = await workflow.run(task)
+        seconds = round(time.perf_counter() - started, 1)
+
+        print(f&quot;\n  --- {label}: {seconds}s ---&quot;)
+        outputs = result.get_outputs()
+        print(&quot;  &quot;, str(outputs)[:400], &quot;...&quot;)
+
+    print(&quot;\n  Sequential: the writer can use the analyst&#x27;s conclusions.&quot;)
+    print(&quot;  Concurrent: all three see only the original data.&quot;)
+    print(&quot;  That is a difference in the ANSWER, not just the speed.&quot;)
+
+
+# --- Main -------------------------------------------------------------------
+async def main():
+    async with DefaultAzureCredential() as credential:
+        async with FoundryChatClient(
+            project_endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+            model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+            credential=credential,
+        ) as client:
+            await the_same_thing_as_before(client)
+            await a_conversation_that_survives_a_restart(client)
+            await middleware_in_action(client)
+            await two_ways_to_run_three_agents(client)
+
+    print(&quot;\nDone.&quot;)
+
+
+if __name__ == &quot;__main__&quot;:
+    asyncio.run(main())
+</code></pre></details></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. What does <code>FoundryChatClient</code> use underneath?</summary><ul><li>A. A separate service</li><li>B. The same Foundry SDK you used in Exercise 01</li><li>C. A direct HTTP call</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>The framework composes with the SDK. Your project, endpoint and RBAC story do not change.</p></div></details>
+<details class="kc"><summary>2. Middleware sets a result and does not call <code>call_next()</code>. What happens?</summary><ul><li>A. The run stops there and returns that result</li><li>B. It retries</li><li>C. It errors</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>No model call, no tool call, no tokens. The cheapest possible place to refuse.</p></div></details>
+<details class="kc"><summary>3. In a concurrent workflow, can the writer use the analyst&#x27;s output?</summary><ul><li>A. Yes</li><li>B. No — they all work from the original input only</li><li>C. Only if it is faster</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>That is a difference in the answer, not just the speed.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You ran one task through the framework and compared it honestly with the direct SDK, gave an agent tools from plain functions, saved and reloaded a session, blocked a request before any model call, and saw why sequential and concurrent workflows produce genuinely different answers.</p>
+<p>The framework is worth adopting when you need these things — not because it is fewer lines, because for one call it is not.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Nothing was created in Azure — every agent used <code>store=False</code>.</p>
+<pre><code class="language-powershell">Remove-Item data/session.json -ErrorAction SilentlyContinue
+</code></pre>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/agent-framework/integrations/by-component/model-providers/microsoft-foundry">Agent Framework with Foundry</a></li><li><a href="https://learn.microsoft.com/agent-framework/agents/middleware/">Middleware</a></li><li><a href="https://learn.microsoft.com/agent-framework/workflows/orchestrations/">Workflow orchestrations</a></li></ul>
+<div class="pager"><a href="09-external-tools.html">&#8592; Connect external tools</a><a href="11-measure-quality.html">Measure quality &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

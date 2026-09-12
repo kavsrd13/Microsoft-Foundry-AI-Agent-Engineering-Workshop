@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>See what it is doing, and what it costs | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-turn-on-tracing">Task 2: Turn on tracing</a></li><li><a href="#task-3-trace-a-request">Task 3: Trace a request</a></li><li><a href="#task-4-what-did-it-cost">Task 4: What did it cost?</a></li><li><a href="#task-5-what-a-failure-looks-like">Task 5: What a failure looks like</a></li><li><a href="#task-6-go-and-find-it">Task 6: Go and find it</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">See what it is doing, and what it costs</h1>
+<p>A resident complains about an answer they got on Tuesday. Can you find that request?</p>
+<p>This exercise makes that possible, and adds the token counts that let you attribute cost to actual traffic rather than to an estimate.</p>
+<p>This exercise takes approximately <strong>75</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/12-observe-and-cost</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: adds <code>azure-monitor-opentelemetry</code></div></div>
+<div class="tags"><span class="tag alt">Production</span><span class="tag">Module 8</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Send traces to Application Insights, in the right order.</li><li>Nest a span inside another and see the shape of a request.</li><li>Record token usage using the standard attribute names.</li><li>Find your own trace with a query.</li><li>See what a failure looks like in telemetry.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>An <strong>Application Insights</strong> resource.</li><li><strong>Monitoring Metrics Publisher</strong> on that resource.</li><li>A Foundry project and chat deployment.</li></ul>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd labs/12-observe-and-cost
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre></li>
+<li><pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
+MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
+APPLICATIONINSIGHTS_CONNECTION_STRING=YOUR-CONNECTION-STRING
+</code></pre>
+<blockquote><p><strong>Tip</strong>: Take the connection string from the Application Insights <strong>Overview</strong> page. It is a connection string, not an instrumentation key.</p></blockquote></li>
+<li><p>Create <code>observe.py</code>:</p>
+<pre><code class="language-python">&quot;&quot;&quot;See what the agent is doing.&quot;&quot;&quot;
+
+import os
+import time
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from azure.monitor.opentelemetry import configure_azure_monitor
+from dotenv import load_dotenv
+from opentelemetry import trace
+
+load_dotenv()
+
+PRICE_PER_MILLION_INPUT = 1.0
+PRICE_PER_MILLION_OUTPUT = 2.0
+</code></pre></li>
+</ol>
+<h2 id="task-2-turn-on-tracing">Task 2: Turn on tracing</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def set_up_tracing():
+    &quot;&quot;&quot;Point OpenTelemetry at Application Insights.
+
+    This MUST happen before you create any spans. A span created before the
+    exporter exists is simply thrown away, and you will spend twenty minutes
+    wondering why your trace never arrived.
+    &quot;&quot;&quot;
+    configure_azure_monitor(
+        connection_string=os.environ[&quot;APPLICATIONINSIGHTS_CONNECTION_STRING&quot;],
+        credential=DefaultAzureCredential(),
+    )
+    return trace.get_tracer(&quot;acme.workshop&quot;)
+</code></pre></li>
+<li><blockquote class="warn"><p><strong>Caution</strong>: The order here is the thing people get wrong. <code>configure_azure_monitor</code> must run <strong>before</strong> you create any span. A span created before the exporter exists is simply discarded, and you will spend twenty minutes wondering why your trace never arrived.</p></blockquote></li>
+</ol>
+<h2 id="task-3-trace-a-request">Task 3: Trace a request</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def answer_with_tracing(tracer, client, question):
+    &quot;&quot;&quot;One request, wrapped in spans so we can see its shape afterwards.&quot;&quot;&quot;
+    print(&quot;\n=== Answering a question, with tracing ===&quot;)
+
+    # The outer span covers the whole request, the way a web request would.
+    with tracer.start_as_current_span(&quot;handle-enquiry&quot;) as request_span:
+        request_span.set_attribute(&quot;workshop.lab&quot;, &quot;12&quot;)
+        request_span.set_attribute(&quot;workshop.synthetic_data&quot;, True)
+
+        # A nested span just for the model call, so we can see how much of
+        # the total time was the model and how much was everything else.
+        with tracer.start_as_current_span(&quot;call-the-model&quot;) as model_span:
+            started = time.perf_counter()
+
+            response = client.responses.create(
+                model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+                instructions=&quot;Answer briefly in Australian English.&quot;,
+                input=question,
+            )
+
+            seconds = time.perf_counter() - started
+
+            # These attribute names are the OpenTelemetry convention for
+            # generative AI. Using the standard names means the dashboards
+            # and queries other people write will understand your traces.
+            model_span.set_attribute(&quot;gen_ai.usage.input_tokens&quot;,
+                                     response.usage.input_tokens)
+            model_span.set_attribute(&quot;gen_ai.usage.output_tokens&quot;,
+                                     response.usage.output_tokens)
+            model_span.set_attribute(&quot;gen_ai.request.model&quot;,
+                                     os.environ[&quot;MODEL_DEPLOYMENT&quot;])
+
+        trace_id = format(request_span.get_span_context().trace_id, &quot;032x&quot;)
+
+    print(&quot;Question:&quot;, question)
+    print(&quot;Answer:  &quot;, response.output_text)
+    print(f&quot;\nTook {round(seconds, 2)}s, &quot;
+          f&quot;{response.usage.input_tokens} in / {response.usage.output_tokens} out&quot;)
+    print(&quot;Trace ID:&quot;, trace_id)
+
+    return trace_id, response.usage
+</code></pre></li>
+<li><p>Add a main block:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    tracer = set_up_tracing()
+
+    client = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    ).get_openai_client()
+
+    trace_id, usage = answer_with_tracing(
+        tracer, client, &quot;How does a resident report a missed bin collection?&quot;
+    )
+</code></pre></li>
+<li><pre><code class="language-powershell">python observe.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: An answer and a 32-character trace ID.</p></blockquote></li>
+<li><p>Two spans, nested. That nesting is what lets you ask how much of the total time was the model and how much was everything else — retrieval, your own code, the network.</p>
+<blockquote><p><strong>Note</strong>: The attribute names <code>gen_ai.usage.input_tokens</code> and <code>gen_ai.usage.output_tokens</code> are the OpenTelemetry convention for generative AI. Using the standard names means dashboards and queries written by other people will understand your traces.</p></blockquote></li>
+</ol>
+<h2 id="task-4-what-did-it-cost">Task 4: What did it cost?</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def what_did_that_cost(usage):
+    &quot;&quot;&quot;Turn the token counts into money.&quot;&quot;&quot;
+    print(&quot;\n=== What that one answer cost ===&quot;)
+
+    input_cost = usage.input_tokens * PRICE_PER_MILLION_INPUT / 1_000_000
+    output_cost = usage.output_tokens * PRICE_PER_MILLION_OUTPUT / 1_000_000
+    total = input_cost + output_cost
+
+    print(f&quot;  input:  {usage.input_tokens} tokens = {input_cost:.6f}&quot;)
+    print(f&quot;  output: {usage.output_tokens} tokens = {output_cost:.6f}&quot;)
+    print(f&quot;  total:  {total:.6f} per answer&quot;)
+    print(f&quot;  at 10,000 answers a day: {total * 10000:.2f} per day&quot;)
+
+    print(&quot;\n  This is model cost only. Search, storage, hosting and the&quot;)
+    print(&quot;  judge calls from Lab 11 are all extra.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">    what_did_that_cost(usage)
+</code></pre></li>
+<li><pre><code class="language-powershell">python observe.py
+</code></pre></li>
+<li><p>Put your real rates in, then look at the daily figure.</p>
+<blockquote><p><strong>Note</strong>: This is the same arithmetic as Exercise 02, but now it is attached to a real request rather than an estimate. Once these attributes are in Application Insights you can sum them by hour and see actual spend against actual traffic.</p></blockquote></li>
+</ol>
+<h2 id="task-5-what-a-failure-looks-like">Task 5: What a failure looks like</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def what_a_failure_looks_like(tracer, client):
+    &quot;&quot;&quot;Break it on purpose, so you recognise the shape of a failure later.&quot;&quot;&quot;
+    print(&quot;\n=== What a failure looks like ===&quot;)
+
+    with tracer.start_as_current_span(&quot;handle-enquiry&quot;) as span:
+        span.set_attribute(&quot;workshop.deliberate_failure&quot;, True)
+        try:
+            client.responses.create(
+                model=&quot;this-deployment-does-not-exist&quot;,
+                input=&quot;This will not work.&quot;,
+            )
+        except Exception as error:
+            # Recording the exception on the span is what makes it findable.
+            span.record_exception(error)
+            span.set_status(trace.StatusCode.ERROR, str(error))
+            print(f&quot;  failed as expected: {type(error).__name__}&quot;)
+
+        trace_id = format(span.get_span_context().trace_id, &quot;032x&quot;)
+
+    print(&quot;  Failed trace ID:&quot;, trace_id)
+    print(&quot;  Find this one in Application Insights too. Knowing what a&quot;)
+    print(&quot;  failure looks like before an incident saves an hour during one.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">    what_a_failure_looks_like(tracer, client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python observe.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: It fails as expected, and records the exception on the span.</p></blockquote></li>
+<li><blockquote><p><strong>Tip</strong>: Deliberately breaking something while nothing is on fire is the cheapest training you will ever do. Knowing what a failed span looks like turns a future incident from an hour of guessing into a five-minute diagnosis.</p></blockquote></li>
+</ol>
+<h2 id="task-6-go-and-find-it">Task 6: Go and find it</h2>
+<ol>
+<li><p>Add the last function:</p>
+<pre><code class="language-python">def flush_and_explain(trace_id):
+    &quot;&quot;&quot;Telemetry is batched. A script that exits without flushing sends nothing.&quot;&quot;&quot;
+    print(&quot;\n=== Sending the traces ===&quot;)
+    trace.get_tracer_provider().force_flush()
+    print(&quot;  flushed&quot;)
+
+    print(&quot;\nNow go and find it. In Application Insights, open Logs and run:&quot;)
+    print(f&quot;&quot;&quot;
+    union requests, dependencies, traces
+    | where operation_Id == &#x27;{trace_id}&#x27;
+    | project timestamp, itemType, name, duration, customDimensions
+    | order by timestamp asc
+    &quot;&quot;&quot;)
+    print(&quot;Ingestion takes a few minutes. Wait before deciding it failed.&quot;)
+    print(&quot;\nA printed trace ID is NOT proof of anything. Finding the trace is.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">    flush_and_explain(trace_id)
+</code></pre></li>
+<li><pre><code class="language-powershell">python observe.py
+</code></pre></li>
+<li><p>Now open <strong>Application Insights → Logs</strong> and run the query it printed, with your trace ID.</p>
+<blockquote><p><strong>Tip</strong>: Ingestion takes a few minutes. Wait before deciding something is broken.</p></blockquote>
+<blockquote class="ok"><p><strong>Check</strong>: You should see your parent span, the nested model call, and the timings.</p></blockquote></li>
+<li><p>Look at what is <strong>not</strong> in those spans: the question and the answer are absent.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Content recording is off by default and should stay off unless someone has decided otherwise deliberately. Turning it on in a resident-facing service puts personal information into a telemetry store with its own retention, access model and location. That is a governance decision, not a debugging convenience.</p></blockquote></li>
+<li><blockquote class="warn"><p><strong>Caution</strong>: A printed trace ID proves nothing. The script prints one whether or not the export succeeded. <strong>Finding it in Application Insights</strong> is the proof.</p></blockquote></li>
+<li><p>The finished file:</p>
+<details class="wholefile"><summary>Show the complete <code>observe.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 12 - See what your agent is doing, and what it costs.
+
+When a resident complains about an answer they got on Tuesday, you need to
+be able to find that request. This lab sends traces to Application Insights
+and records how many tokens each call used.
+
+Run it with:  python observe.py
+&quot;&quot;&quot;
+
+import os
+import time
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from azure.monitor.opentelemetry import configure_azure_monitor
+from dotenv import load_dotenv
+from opentelemetry import trace
+
+load_dotenv()
+
+# Prices are examples. Put your real ones here.
+PRICE_PER_MILLION_INPUT = 1.0
+PRICE_PER_MILLION_OUTPUT = 2.0
+
+
+# --- Task 2 -----------------------------------------------------------------
+def set_up_tracing():
+    &quot;&quot;&quot;Point OpenTelemetry at Application Insights.
+
+    This MUST happen before you create any spans. A span created before the
+    exporter exists is simply thrown away, and you will spend twenty minutes
+    wondering why your trace never arrived.
+    &quot;&quot;&quot;
+    configure_azure_monitor(
+        connection_string=os.environ[&quot;APPLICATIONINSIGHTS_CONNECTION_STRING&quot;],
+        credential=DefaultAzureCredential(),
+    )
+    return trace.get_tracer(&quot;acme.workshop&quot;)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def answer_with_tracing(tracer, client, question):
+    &quot;&quot;&quot;One request, wrapped in spans so we can see its shape afterwards.&quot;&quot;&quot;
+    print(&quot;\n=== Answering a question, with tracing ===&quot;)
+
+    # The outer span covers the whole request, the way a web request would.
+    with tracer.start_as_current_span(&quot;handle-enquiry&quot;) as request_span:
+        request_span.set_attribute(&quot;workshop.lab&quot;, &quot;12&quot;)
+        request_span.set_attribute(&quot;workshop.synthetic_data&quot;, True)
+
+        # A nested span just for the model call, so we can see how much of
+        # the total time was the model and how much was everything else.
+        with tracer.start_as_current_span(&quot;call-the-model&quot;) as model_span:
+            started = time.perf_counter()
+
+            response = client.responses.create(
+                model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+                instructions=&quot;Answer briefly in Australian English.&quot;,
+                input=question,
+            )
+
+            seconds = time.perf_counter() - started
+
+            # These attribute names are the OpenTelemetry convention for
+            # generative AI. Using the standard names means the dashboards
+            # and queries other people write will understand your traces.
+            model_span.set_attribute(&quot;gen_ai.usage.input_tokens&quot;,
+                                     response.usage.input_tokens)
+            model_span.set_attribute(&quot;gen_ai.usage.output_tokens&quot;,
+                                     response.usage.output_tokens)
+            model_span.set_attribute(&quot;gen_ai.request.model&quot;,
+                                     os.environ[&quot;MODEL_DEPLOYMENT&quot;])
+
+        trace_id = format(request_span.get_span_context().trace_id, &quot;032x&quot;)
+
+    print(&quot;Question:&quot;, question)
+    print(&quot;Answer:  &quot;, response.output_text)
+    print(f&quot;\nTook {round(seconds, 2)}s, &quot;
+          f&quot;{response.usage.input_tokens} in / {response.usage.output_tokens} out&quot;)
+    print(&quot;Trace ID:&quot;, trace_id)
+
+    return trace_id, response.usage
+
+
+# --- Task 4 -----------------------------------------------------------------
+def what_did_that_cost(usage):
+    &quot;&quot;&quot;Turn the token counts into money.&quot;&quot;&quot;
+    print(&quot;\n=== What that one answer cost ===&quot;)
+
+    input_cost = usage.input_tokens * PRICE_PER_MILLION_INPUT / 1_000_000
+    output_cost = usage.output_tokens * PRICE_PER_MILLION_OUTPUT / 1_000_000
+    total = input_cost + output_cost
+
+    print(f&quot;  input:  {usage.input_tokens} tokens = {input_cost:.6f}&quot;)
+    print(f&quot;  output: {usage.output_tokens} tokens = {output_cost:.6f}&quot;)
+    print(f&quot;  total:  {total:.6f} per answer&quot;)
+    print(f&quot;  at 10,000 answers a day: {total * 10000:.2f} per day&quot;)
+
+    print(&quot;\n  This is model cost only. Search, storage, hosting and the&quot;)
+    print(&quot;  judge calls from Lab 11 are all extra.&quot;)
+
+
+# --- Task 5 -----------------------------------------------------------------
+def what_a_failure_looks_like(tracer, client):
+    &quot;&quot;&quot;Break it on purpose, so you recognise the shape of a failure later.&quot;&quot;&quot;
+    print(&quot;\n=== What a failure looks like ===&quot;)
+
+    with tracer.start_as_current_span(&quot;handle-enquiry&quot;) as span:
+        span.set_attribute(&quot;workshop.deliberate_failure&quot;, True)
+        try:
+            client.responses.create(
+                model=&quot;this-deployment-does-not-exist&quot;,
+                input=&quot;This will not work.&quot;,
+            )
+        except Exception as error:
+            # Recording the exception on the span is what makes it findable.
+            span.record_exception(error)
+            span.set_status(trace.StatusCode.ERROR, str(error))
+            print(f&quot;  failed as expected: {type(error).__name__}&quot;)
+
+        trace_id = format(span.get_span_context().trace_id, &quot;032x&quot;)
+
+    print(&quot;  Failed trace ID:&quot;, trace_id)
+    print(&quot;  Find this one in Application Insights too. Knowing what a&quot;)
+    print(&quot;  failure looks like before an incident saves an hour during one.&quot;)
+
+
+# --- Task 6 -----------------------------------------------------------------
+def flush_and_explain(trace_id):
+    &quot;&quot;&quot;Telemetry is batched. A script that exits without flushing sends nothing.&quot;&quot;&quot;
+    print(&quot;\n=== Sending the traces ===&quot;)
+    trace.get_tracer_provider().force_flush()
+    print(&quot;  flushed&quot;)
+
+    print(&quot;\nNow go and find it. In Application Insights, open Logs and run:&quot;)
+    print(f&quot;&quot;&quot;
+    union requests, dependencies, traces
+    | where operation_Id == &#x27;{trace_id}&#x27;
+    | project timestamp, itemType, name, duration, customDimensions
+    | order by timestamp asc
+    &quot;&quot;&quot;)
+    print(&quot;Ingestion takes a few minutes. Wait before deciding it failed.&quot;)
+    print(&quot;\nA printed trace ID is NOT proof of anything. Finding the trace is.&quot;)
+
+
+# --- Main -------------------------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    tracer = set_up_tracing()
+
+    client = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    ).get_openai_client()
+
+    trace_id, usage = answer_with_tracing(
+        tracer, client, &quot;How does a resident report a missed bin collection?&quot;
+    )
+    what_did_that_cost(usage)
+    what_a_failure_looks_like(tracer, client)
+    flush_and_explain(trace_id)
+
+    print(&quot;\nDone.&quot;)
+</code></pre></details></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Your trace never appears. What is the first thing to check?</summary><ul><li>A. That <code>configure_azure_monitor</code> runs before any span is created</li><li>B. The model deployment name</li><li>C. Your Python version</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>Spans created before the exporter exists are silently discarded.</p></div></details>
+<details class="kc"><summary>2. What proves telemetry was ingested?</summary><ul><li>A. The printed trace ID</li><li>B. The flush call returning</li><li>C. Finding the trace in the portal</li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>The first two happen whether or not anything arrived.</p></div></details>
+<details class="kc"><summary>3. Should spans contain the resident&#x27;s question?</summary><ul><li>A. Yes, it helps debugging</li><li>B. No — that is personal data in a different store with different retention</li><li>C. Only in production</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>It may be the right call sometimes, but it must be a deliberate governance decision.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You configured the exporter before creating spans, traced a request with a nested model call, recorded token usage with the standard attribute names, produced a failure on purpose, and then went and found your own trace.</p>
+<p>You also kept content out of telemetry — which is the difference between operational metadata and a second copy of everything a resident typed.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Nothing to delete. Traces already sent stay subject to that Application Insights resource&#x27;s retention policy — which is itself worth knowing when someone asks how long resident interaction data is kept.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/foundry/observability/how-to/enable-tracing">Enable tracing</a></li><li><a href="https://opentelemetry.io/docs/specs/semconv/gen-ai/">OpenTelemetry semantic conventions for GenAI</a></li></ul>
+<div class="pager"><a href="11-measure-quality.html">&#8592; Measure quality</a><a href="13-chat-app.html">Build a chat app &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

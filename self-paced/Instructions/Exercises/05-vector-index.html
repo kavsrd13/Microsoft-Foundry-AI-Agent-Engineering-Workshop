@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Build a vector index and search it four ways | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-describe-the-index">Task 2: Describe the index</a></li><li><a href="#task-3-embed-and-upload">Task 3: Embed and upload</a></li><li><a href="#task-4-four-kinds-of-search">Task 4: Four kinds of search</a></li><li><a href="#task-5-a-note-on-the-managed-alternative">Task 5: A note on the managed alternative</a></li><li><a href="#task-6-clean-up">Task 6: Clean up</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Build a vector index and search it four ways</h1>
+<p>You have labelled chunks from Exercise 04. Now you make them findable.</p>
+<p>The part worth your attention is the last task, where the same question goes through four kinds of search. People argue about which is best; you are going to look at the actual results instead.</p>
+<p>This exercise takes approximately <strong>90</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/05-vector-index</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: adds <code>azure-search-documents</code> and <code>openai</code></div></div>
+<div class="tags"><span class="tag alt">RAG</span><span class="tag">Module 4</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Describe an index: which fields are searchable, filterable, and which holds a vector.</li><li>Turn text into vectors and upload them.</li><li>Run keyword, vector, hybrid and semantic searches and compare what comes back.</li><li>Explain what the semantic ranker adds on top of hybrid.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>An <strong>Azure AI Search</strong> service with the <strong>semantic ranker enabled</strong>.</li><li><strong>Search Service Contributor</strong> and <strong>Search Index Data Contributor</strong> on it.</li><li>An Azure OpenAI resource with <code>text-embedding-3-small</code>, and <strong>Cognitive Services OpenAI User</strong>.</li><li>Exercise 04 finished, or use the <code>data/chunks.json</code> already in this folder.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: Make a <strong>new virtual environment for every exercise</strong>. The exercises pin different versions of the same packages on purpose, and one shared environment will break them.</p></blockquote>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd labs/05-vector-index
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre></li>
+<li><p>Fill in <code>.env</code>. <strong>Put your initials in the index name</strong> so you do not collide with anyone:</p>
+<pre><code class="language-text">SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net
+SEARCH_INDEX=lab05-YOUR-INITIALS
+AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE.openai.azure.com
+EMBEDDING_DEPLOYMENT=text-embedding-3-small
+</code></pre>
+<blockquote class="warn"><p><strong>Caution</strong>: <code>AZURE_OPENAI_ENDPOINT</code> is the <strong>Azure OpenAI resource</strong> URL, not your project endpoint. If embedding calls fail with a 404, check this first.</p></blockquote>
+<blockquote><p><strong>Tip</strong>: The code refuses to run if the index name does not start with <code>lab05-</code>. That is deliberate — it means the clean-up step cannot delete a shared index by accident.</p></blockquote></li>
+<li><p>Create <code>vector_index.py</code> and start it with the imports:</p>
+<pre><code class="language-python">&quot;&quot;&quot;Build a vector index and search it.&quot;&quot;&quot;
+
+import json
+import os
+
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    HnswAlgorithmConfiguration,
+    SearchableField,
+    SearchField,
+    SearchIndex,
+    SemanticConfiguration,
+    SemanticField,
+    SemanticPrioritizedFields,
+    SemanticSearch,
+    SimpleField,
+    VectorSearch,
+    VectorSearchProfile,
+)
+from azure.search.documents.models import VectorizedQuery
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
+VECTOR_SIZE = 1536
+QUESTION = &quot;How many days of annual leave do full-time staff get?&quot;
+</code></pre></li>
+</ol>
+<h2 id="task-2-describe-the-index">Task 2: Describe the index</h2>
+<p>An index is a schema. You say what you store and how each field can be used.</p>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def create_the_index(index_client):
+    &quot;&quot;&quot;Describe the shape of the index: what we store and how we search it.&quot;&quot;&quot;
+    print(&quot;\n=== Creating the index ===&quot;)
+
+    fields = [
+        SimpleField(name=&quot;id&quot;, type=&quot;Edm.String&quot;, key=True),
+        SearchableField(name=&quot;content&quot;, type=&quot;Edm.String&quot;),      # searchable text
+        SimpleField(name=&quot;source&quot;, type=&quot;Edm.String&quot;, filterable=True),
+        SimpleField(name=&quot;page&quot;, type=&quot;Edm.Int32&quot;),
+        SimpleField(name=&quot;allowed_groups&quot;, type=&quot;Collection(Edm.String)&quot;,
+                    filterable=True),                             # used in Lab 06
+        SearchField(
+            name=&quot;content_vector&quot;,
+            type=&quot;Collection(Edm.Single)&quot;,       # a list of 1536 numbers
+            searchable=True,
+            vector_search_dimensions=VECTOR_SIZE,
+            vector_search_profile_name=&quot;my-vector-profile&quot;,
+        ),
+    ]
+
+    index = SearchIndex(
+        name=INDEX_NAME,
+        fields=fields,
+        # HNSW is the algorithm that makes vector search fast.
+        vector_search=VectorSearch(
+            algorithms=[HnswAlgorithmConfiguration(name=&quot;my-hnsw&quot;)],
+            profiles=[VectorSearchProfile(
+                name=&quot;my-vector-profile&quot;,
+                algorithm_configuration_name=&quot;my-hnsw&quot;,
+            )],
+        ),
+        # The semantic ranker re-sorts results by meaning, after retrieval.
+        semantic_search=SemanticSearch(configurations=[
+            SemanticConfiguration(
+                name=&quot;my-semantic-config&quot;,
+                prioritized_fields=SemanticPrioritizedFields(
+                    content_fields=[SemanticField(field_name=&quot;content&quot;)]
+                ),
+            )
+        ]),
+    )
+
+    index_client.create_or_update_index(index)
+    print(&quot;index&quot;, INDEX_NAME, &quot;is ready&quot;)
+</code></pre></li>
+<li><p>Add a main block:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+
+    create_the_index(index_client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python vector_index.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: <code>index lab05-xx is ready</code>. Have a look at it in the Azure portal.</p></blockquote></li>
+<li><p>Each field type is doing a specific job:</p>
+<table><thead><tr><th>Field type</th><th>What it means</th></tr></thead><tbody><tr><td><code>SimpleField</code></td><td>Stored and returned, but not searched by words. Add <code>filterable=True</code> to use it in a filter.</td></tr><tr><td><code>SearchableField</code></td><td>Full-text searchable — the words in it are indexed.</td></tr><tr><td><code>SearchField</code> with <code>vector_search_dimensions</code></td><td>Holds the 1,536 numbers, and is searched by similarity rather than by words.</td></tr></tbody></table>
+<blockquote><p><strong>Note</strong>: <code>allowed_groups</code> is <code>filterable=True</code> and you are not using it yet. Exercise 06 does. Getting it into the schema now saves rebuilding the index later.</p></blockquote></li>
+<li><details class="wholefile"><summary>Show the complete <code>vector_index.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 05 - Build a vector index and search it four ways.
+
+Takes the chunks from Lab 04, turns each one into a vector, puts them in
+Azure AI Search, then runs the same question through four different kinds
+of search so you can see what each one is good at.
+
+Run it with:  python vector_index.py
+&quot;&quot;&quot;
+
+import json
+import os
+
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    HnswAlgorithmConfiguration,
+    SearchableField,
+    SearchField,
+    SearchIndex,
+    SemanticConfiguration,
+    SemanticField,
+    SemanticPrioritizedFields,
+    SemanticSearch,
+    SimpleField,
+    VectorSearch,
+    VectorSearchProfile,
+)
+from azure.search.documents.models import VectorizedQuery
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
+VECTOR_SIZE = 1536          # must match the embedding model you use
+QUESTION = &quot;How many days of annual leave do full-time staff get?&quot;
+
+
+# --- Task 2 -----------------------------------------------------------------
+def create_the_index(index_client):
+    &quot;&quot;&quot;Describe the shape of the index: what we store and how we search it.&quot;&quot;&quot;
+    print(&quot;\n=== Creating the index ===&quot;)
+
+    fields = [
+        SimpleField(name=&quot;id&quot;, type=&quot;Edm.String&quot;, key=True),
+        SearchableField(name=&quot;content&quot;, type=&quot;Edm.String&quot;),      # searchable text
+        SimpleField(name=&quot;source&quot;, type=&quot;Edm.String&quot;, filterable=True),
+        SimpleField(name=&quot;page&quot;, type=&quot;Edm.Int32&quot;),
+        SimpleField(name=&quot;allowed_groups&quot;, type=&quot;Collection(Edm.String)&quot;,
+                    filterable=True),                             # used in Lab 06
+        SearchField(
+            name=&quot;content_vector&quot;,
+            type=&quot;Collection(Edm.Single)&quot;,       # a list of 1536 numbers
+            searchable=True,
+            vector_search_dimensions=VECTOR_SIZE,
+            vector_search_profile_name=&quot;my-vector-profile&quot;,
+        ),
+    ]
+
+    index = SearchIndex(
+        name=INDEX_NAME,
+        fields=fields,
+        # HNSW is the algorithm that makes vector search fast.
+        vector_search=VectorSearch(
+            algorithms=[HnswAlgorithmConfiguration(name=&quot;my-hnsw&quot;)],
+            profiles=[VectorSearchProfile(
+                name=&quot;my-vector-profile&quot;,
+                algorithm_configuration_name=&quot;my-hnsw&quot;,
+            )],
+        ),
+        # The semantic ranker re-sorts results by meaning, after retrieval.
+        semantic_search=SemanticSearch(configurations=[
+            SemanticConfiguration(
+                name=&quot;my-semantic-config&quot;,
+                prioritized_fields=SemanticPrioritizedFields(
+                    content_fields=[SemanticField(field_name=&quot;content&quot;)]
+                ),
+            )
+        ]),
+    )
+
+    index_client.create_or_update_index(index)
+    print(&quot;index&quot;, INDEX_NAME, &quot;is ready&quot;)
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+
+    create_the_index(index_client)
+</code></pre></details></li>
+</ol>
+<h2 id="task-3-embed-and-upload">Task 3: Embed and upload</h2>
+<ol>
+<li><p>Add these two functions:</p>
+<pre><code class="language-python">def make_vector(embeddings_client, text):
+    &quot;&quot;&quot;Turn a piece of text into a list of numbers.&quot;&quot;&quot;
+    response = embeddings_client.embeddings.create(
+        model=os.environ[&quot;EMBEDDING_DEPLOYMENT&quot;],
+        input=text,
+        dimensions=VECTOR_SIZE,
+    )
+    return response.data[0].embedding
+
+
+def upload_the_chunks(search_client, embeddings_client):
+    &quot;&quot;&quot;Embed every chunk and put it in the index.&quot;&quot;&quot;
+    print(&quot;\n=== Uploading chunks ===&quot;)
+
+    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        chunks = json.load(file)
+
+    documents = []
+    for chunk in chunks:
+        documents.append({
+            &quot;id&quot;: chunk[&quot;id&quot;],
+            &quot;content&quot;: chunk[&quot;content&quot;],
+            &quot;source&quot;: chunk[&quot;source&quot;],
+            &quot;page&quot;: chunk[&quot;page&quot;],
+            &quot;allowed_groups&quot;: chunk[&quot;allowed_groups&quot;],
+            &quot;content_vector&quot;: make_vector(embeddings_client, chunk[&quot;content&quot;]),
+        })
+        print(f&quot;  embedded {chunk[&#x27;id&#x27;]}&quot;)
+
+    result = search_client.upload_documents(documents)
+
+    succeeded = sum(1 for item in result if item.succeeded)
+    print(f&quot;\nuploaded {succeeded} of {len(documents)} documents&quot;)
+</code></pre></li>
+<li><p>Replace the main block with this — it needs the embeddings client and a search client too:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+    search_client = SearchClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], INDEX_NAME, credential)
+
+    token_provider = get_bearer_token_provider(
+        credential, &quot;https://cognitiveservices.azure.com/.default&quot;
+    )
+    embeddings_client = OpenAI(
+        base_url=os.environ[&quot;AZURE_OPENAI_ENDPOINT&quot;].rstrip(&quot;/&quot;) + &quot;/openai/v1/&quot;,
+        api_key=token_provider,
+    )
+
+    create_the_index(index_client)
+    upload_the_chunks(search_client, embeddings_client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python vector_index.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: One <code>embedded ...</code> line per chunk, then a count of uploaded documents.</p></blockquote></li>
+<li><p><strong>Have a look at what a vector actually is.</strong> Add this temporarily at the end of <code>upload_the_chunks</code>:</p>
+<pre><code class="language-python">    print(&quot;first 8 numbers of one vector:&quot;,
+          documents[0][&quot;content_vector&quot;][:8])
+    print(&quot;total numbers:&quot;, len(documents[0][&quot;content_vector&quot;]))
+</code></pre>
+<p>Run it, look, then remove those lines.</p>
+<blockquote><p><strong>Note</strong>: That is all an embedding is — a long list of numbers. It is not readable and it is not reversible. Its only purpose is that similar meanings land near each other.</p></blockquote></li>
+<li><details class="wholefile"><summary>Show the complete <code>vector_index.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 05 - Build a vector index and search it four ways.
+
+Takes the chunks from Lab 04, turns each one into a vector, puts them in
+Azure AI Search, then runs the same question through four different kinds
+of search so you can see what each one is good at.
+
+Run it with:  python vector_index.py
+&quot;&quot;&quot;
+
+import json
+import os
+
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    HnswAlgorithmConfiguration,
+    SearchableField,
+    SearchField,
+    SearchIndex,
+    SemanticConfiguration,
+    SemanticField,
+    SemanticPrioritizedFields,
+    SemanticSearch,
+    SimpleField,
+    VectorSearch,
+    VectorSearchProfile,
+)
+from azure.search.documents.models import VectorizedQuery
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
+VECTOR_SIZE = 1536          # must match the embedding model you use
+QUESTION = &quot;How many days of annual leave do full-time staff get?&quot;
+
+
+# --- Task 2 -----------------------------------------------------------------
+def create_the_index(index_client):
+    &quot;&quot;&quot;Describe the shape of the index: what we store and how we search it.&quot;&quot;&quot;
+    print(&quot;\n=== Creating the index ===&quot;)
+
+    fields = [
+        SimpleField(name=&quot;id&quot;, type=&quot;Edm.String&quot;, key=True),
+        SearchableField(name=&quot;content&quot;, type=&quot;Edm.String&quot;),      # searchable text
+        SimpleField(name=&quot;source&quot;, type=&quot;Edm.String&quot;, filterable=True),
+        SimpleField(name=&quot;page&quot;, type=&quot;Edm.Int32&quot;),
+        SimpleField(name=&quot;allowed_groups&quot;, type=&quot;Collection(Edm.String)&quot;,
+                    filterable=True),                             # used in Lab 06
+        SearchField(
+            name=&quot;content_vector&quot;,
+            type=&quot;Collection(Edm.Single)&quot;,       # a list of 1536 numbers
+            searchable=True,
+            vector_search_dimensions=VECTOR_SIZE,
+            vector_search_profile_name=&quot;my-vector-profile&quot;,
+        ),
+    ]
+
+    index = SearchIndex(
+        name=INDEX_NAME,
+        fields=fields,
+        # HNSW is the algorithm that makes vector search fast.
+        vector_search=VectorSearch(
+            algorithms=[HnswAlgorithmConfiguration(name=&quot;my-hnsw&quot;)],
+            profiles=[VectorSearchProfile(
+                name=&quot;my-vector-profile&quot;,
+                algorithm_configuration_name=&quot;my-hnsw&quot;,
+            )],
+        ),
+        # The semantic ranker re-sorts results by meaning, after retrieval.
+        semantic_search=SemanticSearch(configurations=[
+            SemanticConfiguration(
+                name=&quot;my-semantic-config&quot;,
+                prioritized_fields=SemanticPrioritizedFields(
+                    content_fields=[SemanticField(field_name=&quot;content&quot;)]
+                ),
+            )
+        ]),
+    )
+
+    index_client.create_or_update_index(index)
+    print(&quot;index&quot;, INDEX_NAME, &quot;is ready&quot;)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def make_vector(embeddings_client, text):
+    &quot;&quot;&quot;Turn a piece of text into a list of numbers.&quot;&quot;&quot;
+    response = embeddings_client.embeddings.create(
+        model=os.environ[&quot;EMBEDDING_DEPLOYMENT&quot;],
+        input=text,
+        dimensions=VECTOR_SIZE,
+    )
+    return response.data[0].embedding
+
+
+def upload_the_chunks(search_client, embeddings_client):
+    &quot;&quot;&quot;Embed every chunk and put it in the index.&quot;&quot;&quot;
+    print(&quot;\n=== Uploading chunks ===&quot;)
+
+    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        chunks = json.load(file)
+
+    documents = []
+    for chunk in chunks:
+        documents.append({
+            &quot;id&quot;: chunk[&quot;id&quot;],
+            &quot;content&quot;: chunk[&quot;content&quot;],
+            &quot;source&quot;: chunk[&quot;source&quot;],
+            &quot;page&quot;: chunk[&quot;page&quot;],
+            &quot;allowed_groups&quot;: chunk[&quot;allowed_groups&quot;],
+            &quot;content_vector&quot;: make_vector(embeddings_client, chunk[&quot;content&quot;]),
+        })
+        print(f&quot;  embedded {chunk[&#x27;id&#x27;]}&quot;)
+
+    result = search_client.upload_documents(documents)
+
+    succeeded = sum(1 for item in result if item.succeeded)
+    print(f&quot;\nuploaded {succeeded} of {len(documents)} documents&quot;)
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+    search_client = SearchClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], INDEX_NAME, credential)
+
+    token_provider = get_bearer_token_provider(
+        credential, &quot;https://cognitiveservices.azure.com/.default&quot;
+    )
+    embeddings_client = OpenAI(
+        base_url=os.environ[&quot;AZURE_OPENAI_ENDPOINT&quot;].rstrip(&quot;/&quot;) + &quot;/openai/v1/&quot;,
+        api_key=token_provider,
+    )
+
+    create_the_index(index_client)
+    upload_the_chunks(search_client, embeddings_client)
+</code></pre></details></li>
+</ol>
+<h2 id="task-4-four-kinds-of-search">Task 4: Four kinds of search</h2>
+<p>This is the task that earns the exercise. One question, four searches, and you look at what actually comes back.</p>
+<ol>
+<li><p>Add these two functions:</p>
+<pre><code class="language-python">def search(search_client, embeddings_client, mode):
+    &quot;&quot;&quot;Run one question through one kind of search.&quot;&quot;&quot;
+    options = {
+        &quot;select&quot;: [&quot;id&quot;, &quot;content&quot;, &quot;source&quot;, &quot;page&quot;],
+        &quot;top&quot;: 3,
+    }
+
+    if mode in (&quot;keyword&quot;, &quot;hybrid&quot;, &quot;semantic&quot;):
+        # Matches on the actual words.
+        options[&quot;search_text&quot;] = QUESTION
+
+    if mode in (&quot;vector&quot;, &quot;hybrid&quot;, &quot;semantic&quot;):
+        # Matches on meaning, even when the words are different.
+        options[&quot;vector_queries&quot;] = [VectorizedQuery(
+            vector=make_vector(embeddings_client, QUESTION),
+            fields=&quot;content_vector&quot;,
+            k_nearest_neighbors=10,
+        )]
+
+    if mode == &quot;semantic&quot;:
+        # Re-sorts whatever came back, using a language model.
+        options[&quot;query_type&quot;] = &quot;semantic&quot;
+        options[&quot;semantic_configuration_name&quot;] = &quot;my-semantic-config&quot;
+
+    return list(search_client.search(**options))
+
+
+def compare_search_modes(search_client, embeddings_client):
+    &quot;&quot;&quot;Ask the same question four ways and print what each one returns.&quot;&quot;&quot;
+    print(&quot;\n=== Comparing search modes ===&quot;)
+    print(&quot;Question:&quot;, QUESTION)
+
+    for mode in [&quot;keyword&quot;, &quot;vector&quot;, &quot;hybrid&quot;, &quot;semantic&quot;]:
+        print(f&quot;\n--- {mode} ---&quot;)
+        for position, hit in enumerate(search(search_client, embeddings_client, mode), 1):
+            preview = hit[&quot;content&quot;][:90].replace(&quot;\n&quot;, &quot; &quot;)
+            print(f&quot;  {position}. [{hit[&#x27;source&#x27;]} p{hit[&#x27;page&#x27;]}] {preview}...&quot;)
+
+    print(&quot;\nKeyword needs the same words. Vector understands meaning.&quot;)
+    print(&quot;Hybrid does both. Semantic re-sorts hybrid&#x27;s results by meaning.&quot;)
+</code></pre></li>
+<li><p>Call the comparison:</p>
+<pre><code class="language-python">    compare_search_modes(search_client, embeddings_client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python vector_index.py
+</code></pre></li>
+<li><p>Look at what each mode actually does, in the code:</p>
+<table><thead><tr><th>Mode</th><th>What it sends</th><th>What it is good at</th></tr></thead><tbody><tr><td>keyword</td><td><code>search_text</code> only</td><td>Exact terms, names, reference numbers</td></tr><tr><td>vector</td><td><code>vector_queries</code> only</td><td>Meaning, when the words do not match</td></tr><tr><td>hybrid</td><td>Both, combined</td><td>Most real questions</td></tr><tr><td>semantic</td><td>Both, then re-sorted by a language model</td><td>Getting the best result to the top</td></tr></tbody></table></li>
+<li><p><strong>Now make the difference obvious.</strong> Change the question to something that means the same thing but shares almost no words with the documents:</p>
+<pre><code class="language-python">QUESTION = &quot;How much time off can I take each year?&quot;
+</code></pre>
+<p>Run it again and compare keyword against vector.</p>
+<blockquote class="ok"><p><strong>Check</strong>: Keyword search should struggle — none of those words appear in the policy. Vector search should still find the right chunk, because it is matching meaning.</p></blockquote>
+<blockquote><p><strong>Note</strong>: That single experiment is the entire argument for vector search. Try a couple more of your own wordings before moving on.</p></blockquote></li>
+<li><p>Then try the opposite — a question with an exact term in it, like a document name — and see keyword do better than vector.</p>
+<blockquote><p><strong>Tip</strong>: This is why hybrid is the sensible default. You rarely know in advance which kind of question a resident will ask.</p></blockquote></li>
+<li><p>The finished file:</p>
+<details class="wholefile"><summary>Show the complete <code>vector_index.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 05 - Build a vector index and search it four ways.
+
+Takes the chunks from Lab 04, turns each one into a vector, puts them in
+Azure AI Search, then runs the same question through four different kinds
+of search so you can see what each one is good at.
+
+Run it with:  python vector_index.py
+&quot;&quot;&quot;
+
+import json
+import os
+
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    HnswAlgorithmConfiguration,
+    SearchableField,
+    SearchField,
+    SearchIndex,
+    SemanticConfiguration,
+    SemanticField,
+    SemanticPrioritizedFields,
+    SemanticSearch,
+    SimpleField,
+    VectorSearch,
+    VectorSearchProfile,
+)
+from azure.search.documents.models import VectorizedQuery
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
+VECTOR_SIZE = 1536          # must match the embedding model you use
+QUESTION = &quot;How many days of annual leave do full-time staff get?&quot;
+
+
+# --- Task 2 -----------------------------------------------------------------
+def create_the_index(index_client):
+    &quot;&quot;&quot;Describe the shape of the index: what we store and how we search it.&quot;&quot;&quot;
+    print(&quot;\n=== Creating the index ===&quot;)
+
+    fields = [
+        SimpleField(name=&quot;id&quot;, type=&quot;Edm.String&quot;, key=True),
+        SearchableField(name=&quot;content&quot;, type=&quot;Edm.String&quot;),      # searchable text
+        SimpleField(name=&quot;source&quot;, type=&quot;Edm.String&quot;, filterable=True),
+        SimpleField(name=&quot;page&quot;, type=&quot;Edm.Int32&quot;),
+        SimpleField(name=&quot;allowed_groups&quot;, type=&quot;Collection(Edm.String)&quot;,
+                    filterable=True),                             # used in Lab 06
+        SearchField(
+            name=&quot;content_vector&quot;,
+            type=&quot;Collection(Edm.Single)&quot;,       # a list of 1536 numbers
+            searchable=True,
+            vector_search_dimensions=VECTOR_SIZE,
+            vector_search_profile_name=&quot;my-vector-profile&quot;,
+        ),
+    ]
+
+    index = SearchIndex(
+        name=INDEX_NAME,
+        fields=fields,
+        # HNSW is the algorithm that makes vector search fast.
+        vector_search=VectorSearch(
+            algorithms=[HnswAlgorithmConfiguration(name=&quot;my-hnsw&quot;)],
+            profiles=[VectorSearchProfile(
+                name=&quot;my-vector-profile&quot;,
+                algorithm_configuration_name=&quot;my-hnsw&quot;,
+            )],
+        ),
+        # The semantic ranker re-sorts results by meaning, after retrieval.
+        semantic_search=SemanticSearch(configurations=[
+            SemanticConfiguration(
+                name=&quot;my-semantic-config&quot;,
+                prioritized_fields=SemanticPrioritizedFields(
+                    content_fields=[SemanticField(field_name=&quot;content&quot;)]
+                ),
+            )
+        ]),
+    )
+
+    index_client.create_or_update_index(index)
+    print(&quot;index&quot;, INDEX_NAME, &quot;is ready&quot;)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def make_vector(embeddings_client, text):
+    &quot;&quot;&quot;Turn a piece of text into a list of numbers.&quot;&quot;&quot;
+    response = embeddings_client.embeddings.create(
+        model=os.environ[&quot;EMBEDDING_DEPLOYMENT&quot;],
+        input=text,
+        dimensions=VECTOR_SIZE,
+    )
+    return response.data[0].embedding
+
+
+def upload_the_chunks(search_client, embeddings_client):
+    &quot;&quot;&quot;Embed every chunk and put it in the index.&quot;&quot;&quot;
+    print(&quot;\n=== Uploading chunks ===&quot;)
+
+    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        chunks = json.load(file)
+
+    documents = []
+    for chunk in chunks:
+        documents.append({
+            &quot;id&quot;: chunk[&quot;id&quot;],
+            &quot;content&quot;: chunk[&quot;content&quot;],
+            &quot;source&quot;: chunk[&quot;source&quot;],
+            &quot;page&quot;: chunk[&quot;page&quot;],
+            &quot;allowed_groups&quot;: chunk[&quot;allowed_groups&quot;],
+            &quot;content_vector&quot;: make_vector(embeddings_client, chunk[&quot;content&quot;]),
+        })
+        print(f&quot;  embedded {chunk[&#x27;id&#x27;]}&quot;)
+
+    result = search_client.upload_documents(documents)
+
+    succeeded = sum(1 for item in result if item.succeeded)
+    print(f&quot;\nuploaded {succeeded} of {len(documents)} documents&quot;)
+
+
+# --- Task 4 -----------------------------------------------------------------
+def search(search_client, embeddings_client, mode):
+    &quot;&quot;&quot;Run one question through one kind of search.&quot;&quot;&quot;
+    options = {
+        &quot;select&quot;: [&quot;id&quot;, &quot;content&quot;, &quot;source&quot;, &quot;page&quot;],
+        &quot;top&quot;: 3,
+    }
+
+    if mode in (&quot;keyword&quot;, &quot;hybrid&quot;, &quot;semantic&quot;):
+        # Matches on the actual words.
+        options[&quot;search_text&quot;] = QUESTION
+
+    if mode in (&quot;vector&quot;, &quot;hybrid&quot;, &quot;semantic&quot;):
+        # Matches on meaning, even when the words are different.
+        options[&quot;vector_queries&quot;] = [VectorizedQuery(
+            vector=make_vector(embeddings_client, QUESTION),
+            fields=&quot;content_vector&quot;,
+            k_nearest_neighbors=10,
+        )]
+
+    if mode == &quot;semantic&quot;:
+        # Re-sorts whatever came back, using a language model.
+        options[&quot;query_type&quot;] = &quot;semantic&quot;
+        options[&quot;semantic_configuration_name&quot;] = &quot;my-semantic-config&quot;
+
+    return list(search_client.search(**options))
+
+
+def compare_search_modes(search_client, embeddings_client):
+    &quot;&quot;&quot;Ask the same question four ways and print what each one returns.&quot;&quot;&quot;
+    print(&quot;\n=== Comparing search modes ===&quot;)
+    print(&quot;Question:&quot;, QUESTION)
+
+    for mode in [&quot;keyword&quot;, &quot;vector&quot;, &quot;hybrid&quot;, &quot;semantic&quot;]:
+        print(f&quot;\n--- {mode} ---&quot;)
+        for position, hit in enumerate(search(search_client, embeddings_client, mode), 1):
+            preview = hit[&quot;content&quot;][:90].replace(&quot;\n&quot;, &quot; &quot;)
+            print(f&quot;  {position}. [{hit[&#x27;source&#x27;]} p{hit[&#x27;page&#x27;]}] {preview}...&quot;)
+
+    print(&quot;\nKeyword needs the same words. Vector understands meaning.&quot;)
+    print(&quot;Hybrid does both. Semantic re-sorts hybrid&#x27;s results by meaning.&quot;)
+
+
+# --- Task 5 -----------------------------------------------------------------
+def delete_the_index(index_client):
+    &quot;&quot;&quot;Tidy up. Only deletes the index this lab created.&quot;&quot;&quot;
+    print(&quot;\n=== Cleaning up ===&quot;)
+    if not INDEX_NAME.startswith(&quot;lab05-&quot;):
+        raise ValueError(&quot;SEARCH_INDEX must start with &#x27;lab05-&#x27; so we cannot &quot;
+                         &quot;delete a shared index by mistake&quot;)
+    index_client.delete_index(INDEX_NAME)
+    print(&quot;deleted index&quot;, INDEX_NAME)
+
+
+# --- Main -------------------------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+    search_client = SearchClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], INDEX_NAME, credential)
+
+    token_provider = get_bearer_token_provider(
+        credential, &quot;https://cognitiveservices.azure.com/.default&quot;
+    )
+    embeddings_client = OpenAI(
+        base_url=os.environ[&quot;AZURE_OPENAI_ENDPOINT&quot;].rstrip(&quot;/&quot;) + &quot;/openai/v1/&quot;,
+        api_key=token_provider,
+    )
+
+    create_the_index(index_client)
+    upload_the_chunks(search_client, embeddings_client)
+    compare_search_modes(search_client, embeddings_client)
+
+    # Uncomment when you have finished the lab:
+    # delete_the_index(index_client)
+
+    print(&quot;\nDone. Lab 06 turns these results into a cited answer.&quot;)
+</code></pre></details></li>
+</ol>
+<h2 id="task-5-a-note-on-the-managed-alternative">Task 5: A note on the managed alternative</h2>
+<p>You just built this pipeline by hand: read chunks, embed them, upload them. Azure AI Search can also do all of that for you, with an <strong>indexer</strong> that reads a data source, a <strong>skillset</strong> that splits and embeds, and <strong>index projections</strong> that write one document per chunk. That is called integrated vectorisation.</p>
+<ol>
+<li><table><thead><tr><th></th><th>By hand (what you built)</th><th>Managed indexer</th></tr></thead><tbody><tr><td>Chunking</td><td>Your code, testable and visible</td><td>Configured in a skillset</td></tr><tr><td>Embedding</td><td>A call you can see and measure</td><td>Runs inside the pipeline</td></tr><tr><td>Scheduling and change detection</td><td>You build it — see Exercise 07</td><td>Built in</td></tr><tr><td>Debugging</td><td>Ordinary Python</td><td>Indexer execution history</td></tr><tr><td>Best when</td><td>Unusual sources, or you need to see every step</td><td>Standard documents in a supported store</td></tr></tbody></table></li>
+<li><p>You built it by hand because you cannot debug or improve what you have never seen. In a real project, having done this once, the managed indexer is often the right choice.</p>
+<blockquote><p><strong>Note</strong>: Exercise 07 builds the change detection that the managed indexer gives you for free — which is the best way to understand what it is actually doing for you.</p></blockquote></li>
+</ol>
+<h2 id="task-6-clean-up">Task 6: Clean up</h2>
+<ol>
+<li><p>The index costs money while it exists. Uncomment the last line of the main block:</p>
+<pre><code class="language-python">    delete_the_index(index_client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python vector_index.py
+</code></pre>
+<blockquote class="warn"><p><strong>Caution</strong>: Keep this index if you are going straight on to Exercise 06 — it uses the same chunks. Otherwise delete it now.</p></blockquote></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Your question uses none of the same words as the document. Which search finds it?</summary><ul><li>A. Keyword</li><li>B. Vector</li><li>C. Neither</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>You proved this in Task 4. Vector search matches meaning, not words.</p></div></details>
+<details class="kc"><summary>2. What does the semantic ranker do?</summary><ul><li>A. Creates the vectors</li><li>B. Re-sorts the results that were already retrieved</li><li>C. Replaces keyword search</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>It runs after retrieval. It can only reorder what hybrid search already found.</p></div></details>
+<details class="kc"><summary>3. You switch from <code>text-embedding-3-small</code> to a different model. What must you do?</summary><ul><li>A. Change the <code>.env</code> value</li><li>B. Nothing</li><li>C. Rebuild the index and re-embed everything</li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>Vectors from different models are not comparable, so old and new vectors cannot coexist.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You described an index including a vector field, embedded and uploaded your chunks, and compared four kinds of search on the same question — including the experiment that shows why vector search exists at all.</p>
+<p>Exercise 06 turns these search results into an answer a resident can actually use.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Delete the index as in Task 6, unless you are going straight to Exercise 06.</p>
+<p>The Search service and the Azure OpenAI resource are shared and stay where they are.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/search/vector-search-how-to-create-index">Create a vector index</a></li><li><a href="https://learn.microsoft.com/azure/search/hybrid-search-overview">Hybrid search</a></li><li><a href="https://learn.microsoft.com/azure/search/semantic-search-overview">Semantic ranking</a></li><li><a href="https://learn.microsoft.com/azure/search/vector-search-integrated-vectorization">Integrated vectorization</a></li></ul>
+<div class="pager"><a href="04-prepare-documents.html">&#8592; Prepare documents</a><a href="06-ground-an-agent.html">Ground an agent &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

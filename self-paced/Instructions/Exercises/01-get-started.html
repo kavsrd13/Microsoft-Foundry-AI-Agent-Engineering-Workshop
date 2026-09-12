@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Get started with Microsoft Foundry | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-connect-and-see-what-you-have">Task 2: Connect, and see what you have</a></li><li><a href="#task-3-ask-a-question">Task 3: Ask a question</a></li><li><a href="#task-4-have-a-conversation">Task 4: Have a conversation</a></li><li><a href="#task-5-stream-the-answer">Task 5: Stream the answer</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Get started with Microsoft Foundry</h1>
+<p>You are going to write one Python file, a few lines at a time, and by the end of it you will have talked to a model four different ways.</p>
+<p>Nothing here is complicated. It is worth doing carefully anyway, because these same few lines open every other exercise in the workshop — and because most of the problems people hit later are authentication or naming problems that show up right here.</p>
+<p>This exercise takes approximately <strong>90</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/01-get-started</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>azure-ai-projects</code>, <code>azure-identity</code>, <code>python-dotenv</code></div></div>
+<div class="tags"><span class="tag alt">Foundations</span><span class="tag">Module 1</span><span class="tag">Module 2</span><span class="tag">Module 3</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Connect to a Foundry project using your own Entra ID sign-in, with no API key.</li><li>List the models your project can actually use.</li><li>Send a question and read the answer.</li><li>Hold a two-turn conversation and see where the memory lives.</li><li>Stream an answer as it is being written.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>An Azure subscription, and the <strong>Azure CLI</strong> installed.</li><li><strong>Python 3.11</strong> installed.</li><li>A Microsoft Foundry project with at least one chat model deployed. Your instructor supplies this.</li><li>A project role that lets you run inference — <em>Foundry User</em> or equivalent.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: Make a <strong>new virtual environment for every exercise</strong>. The exercises pin different versions of the same packages on purpose, and one shared environment will break them.</p></blockquote>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><p>Open a PowerShell terminal in the exercise folder:</p>
+<pre><code class="language-powershell">cd labs/01-get-started
+</code></pre></li>
+<li><p>Create the environment and install what you need:</p>
+<pre><code class="language-powershell">py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre></li>
+<li><p>Sign in to Azure. Use the tenant your instructor gave you:</p>
+<pre><code class="language-powershell">az login --tenant YOUR-TENANT-ID
+az account show --query tenantId -o tsv
+</code></pre>
+<blockquote><p><strong>Tip</strong>: That second command prints the tenant you are <em>actually</em> signed in to. If it does not match what you expected, fix it now — otherwise you will get a confusing 401 in a few minutes.</p></blockquote></li>
+<li><p>Open <code>.env</code> and fill in your two values:</p>
+<pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
+MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
+</code></pre>
+<ul><li><code>PROJECT_ENDPOINT</code> — copy it from your project&#x27;s home page in the Foundry portal. It ends with <code>/api/projects/&lt;something&gt;</code>.</li><li><code>MODEL_DEPLOYMENT</code> — the name of the <strong>deployment</strong>, which is often not the same as the model&#x27;s name in the catalogue. You will confirm it in the next task.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: There is no API key in this file, and there will not be one in any exercise. Everything uses your Entra sign-in.</p></blockquote></li>
+</ol>
+<h2 id="task-2-connect-and-see-what-you-have">Task 2: Connect, and see what you have</h2>
+<p>Create a new file called <code>hello_foundry.py</code> in this folder. You will add to it in every task from here on.</p>
+<ol>
+<li><p>Paste this in to start the file:</p>
+<pre><code class="language-python">&quot;&quot;&quot;Get started with Microsoft Foundry.&quot;&quot;&quot;
+
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+</code></pre>
+<blockquote><p><strong>Note</strong>: <code>DefaultAzureCredential</code> goes looking for an identity. On your laptop it finds your <code>az login</code> session. When this same code runs in Azure later (Exercise 13) it finds the app&#x27;s managed identity instead. You do not change the code.</p></blockquote></li>
+<li><p>Now add a function that lists your deployments. Put it at the bottom of the file:</p>
+<pre><code class="language-python">def show_deployments(project):
+    &quot;&quot;&quot;Print the models this project can use.&quot;&quot;&quot;
+    print(&quot;\n=== Models deployed in this project ===&quot;)
+    for deployment in project.deployments.list():
+        print(&quot; -&quot;, deployment.name)
+</code></pre></li>
+<li><p>And add this at the very bottom, to actually run it:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+
+    show_deployments(project)
+</code></pre></li>
+<li><p>Run it:</p>
+<pre><code class="language-powershell">python hello_foundry.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: You should see a list of deployment names. **Check that the name you put in <code>MODEL_DEPLOYMENT</code> is in that list**, spelled exactly the same way. This is the single most common cause of a 404 later.</p></blockquote>
+<details class="wholefile"><summary>Show the complete <code>hello_foundry.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 01 - Get started with Microsoft Foundry.
+
+The finished file. You build this up one task at a time in the exercise.
+Run it with:  python hello_foundry.py
+&quot;&quot;&quot;
+
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+
+
+# --- Task 2 -----------------------------------------------------------------
+def show_deployments(project):
+    &quot;&quot;&quot;Print the models this project can use.&quot;&quot;&quot;
+    print(&quot;\n=== Models deployed in this project ===&quot;)
+    for deployment in project.deployments.list():
+        print(&quot; -&quot;, deployment.name)
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+
+    show_deployments(project)
+</code></pre></details></li>
+<li><p>If you got an error instead, find it here:</p>
+<table><thead><tr><th>What you saw</th><th>What it means</th></tr></thead><tbody><tr><td><code>KeyError: &#x27;PROJECT_ENDPOINT&#x27;</code></td><td>You did not copy <code>.env.example</code> to <code>.env</code>, or you are running from the wrong folder.</td></tr><tr><td><code>CredentialUnavailableError</code> or 401</td><td>Not signed in, or signed in to the wrong tenant. Run <code>az login --tenant ...</code> again.</td></tr><tr><td>403 Forbidden</td><td>You are signed in, but your account does not have a role on this project. Ask your instructor.</td></tr><tr><td>An empty list</td><td>The project has no model deployed yet.</td></tr></tbody></table></li>
+</ol>
+<h2 id="task-3-ask-a-question">Task 3: Ask a question</h2>
+<ol>
+<li><p>Add this function to the bottom of the file:</p>
+<pre><code class="language-python">def ask_one_question(client):
+    &quot;&quot;&quot;Send one question and print the answer.&quot;&quot;&quot;
+    print(&quot;\n=== One question, one answer ===&quot;)
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=&quot;You are a council assistant. Answer briefly in Australian English.&quot;,
+        input=&quot;A resident&#x27;s bin was not collected. What should they do?&quot;,
+    )
+
+    print(response.output_text)
+</code></pre>
+<ul><li><code>instructions</code> is the standing brief — who the assistant is and how it should behave.</li><li><code>input</code> is the actual question.</li><li><code>output_text</code> is the answer as a plain string.</li></ul></li>
+<li><p>Your main block needs two changes — get an OpenAI-compatible client, and call the new function. Replace the whole <code>if __name__</code> block with this:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+    client = project.get_openai_client()
+
+    show_deployments(project)
+    ask_one_question(client)
+</code></pre></li>
+<li><p>Run it again:</p>
+<pre><code class="language-powershell">python hello_foundry.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: A short paragraph of advice about a missed bin collection.</p></blockquote></li>
+<li><p><strong>Try changing something.</strong> Edit the <code>instructions</code> to say <code>&quot;Answer like a pirate.&quot;</code> and run it again. Then put it back.</p>
+<blockquote><p><strong>Note</strong>: That is the whole idea of instructions: the question stayed the same, the behaviour changed. Exercise 03 turns instructions into a versioned, saved thing rather than a string in your file.</p></blockquote></li>
+<li><details class="wholefile"><summary>Show the complete <code>hello_foundry.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 01 - Get started with Microsoft Foundry.
+
+The finished file. You build this up one task at a time in the exercise.
+Run it with:  python hello_foundry.py
+&quot;&quot;&quot;
+
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+
+
+# --- Task 2 -----------------------------------------------------------------
+def show_deployments(project):
+    &quot;&quot;&quot;Print the models this project can use.&quot;&quot;&quot;
+    print(&quot;\n=== Models deployed in this project ===&quot;)
+    for deployment in project.deployments.list():
+        print(&quot; -&quot;, deployment.name)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def ask_one_question(client):
+    &quot;&quot;&quot;Send one question and print the answer.&quot;&quot;&quot;
+    print(&quot;\n=== One question, one answer ===&quot;)
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=&quot;You are a council assistant. Answer briefly in Australian English.&quot;,
+        input=&quot;A resident&#x27;s bin was not collected. What should they do?&quot;,
+    )
+
+    print(response.output_text)
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+    client = project.get_openai_client()
+
+    show_deployments(project)
+    ask_one_question(client)
+</code></pre></details></li>
+</ol>
+<h2 id="task-4-have-a-conversation">Task 4: Have a conversation</h2>
+<p>Ask the model two questions and it will not remember the first one. It has no memory at all. Anything it appears to remember is something you sent it again.</p>
+<p>A <strong>conversation</strong> is a server-side object that does that for you.</p>
+<ol>
+<li><p>Add this function:</p>
+<pre><code class="language-python">def have_a_conversation(client):
+    &quot;&quot;&quot;Ask two questions that share one conversation, so the second remembers.&quot;&quot;&quot;
+    print(&quot;\n=== A conversation that remembers ===&quot;)
+
+    # A conversation is a server-side resource. It is what carries the context.
+    conversation = client.conversations.create()
+
+    questions = [
+        &quot;My case reference is ACME-204. Please remember it.&quot;,
+        &quot;What case reference did I give you?&quot;,
+    ]
+
+    for question in questions:
+        response = client.responses.create(
+            model=MODEL,
+            instructions=&quot;Answer briefly in Australian English.&quot;,
+            conversation=conversation.id,
+            input=question,
+        )
+        print(&quot;You:&quot;, question)
+        print(&quot;Assistant:&quot;, response.output_text)
+        print()
+</code></pre></li>
+<li><p>Add the call to your main block, after <code>ask_one_question(client)</code>:</p>
+<pre><code class="language-python">    have_a_conversation(client)
+</code></pre></li>
+<li><p>Run it:</p>
+<pre><code class="language-powershell">python hello_foundry.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The second answer should mention <strong>ACME-204</strong>, even though the second question never says it.</p></blockquote></li>
+<li><p><strong>Now prove where that memory lives.</strong> Delete <code>conversation=conversation.id,</code> from the <code>client.responses.create(...)</code> call and run again.</p>
+<blockquote class="ok"><p><strong>Check</strong>: The second answer can no longer tell you the case reference. Put the line back.</p></blockquote>
+<blockquote><p><strong>Note</strong>: This is worth two minutes of your time. The model is stateless. The conversation object is what carries the context — which is exactly why Exercise 08 has to make a real decision about where conversation state is kept in a production app.</p></blockquote></li>
+<li><details class="wholefile"><summary>Show the complete <code>hello_foundry.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 01 - Get started with Microsoft Foundry.
+
+The finished file. You build this up one task at a time in the exercise.
+Run it with:  python hello_foundry.py
+&quot;&quot;&quot;
+
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+
+
+# --- Task 2 -----------------------------------------------------------------
+def show_deployments(project):
+    &quot;&quot;&quot;Print the models this project can use.&quot;&quot;&quot;
+    print(&quot;\n=== Models deployed in this project ===&quot;)
+    for deployment in project.deployments.list():
+        print(&quot; -&quot;, deployment.name)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def ask_one_question(client):
+    &quot;&quot;&quot;Send one question and print the answer.&quot;&quot;&quot;
+    print(&quot;\n=== One question, one answer ===&quot;)
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=&quot;You are a council assistant. Answer briefly in Australian English.&quot;,
+        input=&quot;A resident&#x27;s bin was not collected. What should they do?&quot;,
+    )
+
+    print(response.output_text)
+
+
+# --- Task 4 -----------------------------------------------------------------
+def have_a_conversation(client):
+    &quot;&quot;&quot;Ask two questions that share one conversation, so the second remembers.&quot;&quot;&quot;
+    print(&quot;\n=== A conversation that remembers ===&quot;)
+
+    # A conversation is a server-side resource. It is what carries the context.
+    conversation = client.conversations.create()
+
+    questions = [
+        &quot;My case reference is ACME-204. Please remember it.&quot;,
+        &quot;What case reference did I give you?&quot;,
+    ]
+
+    for question in questions:
+        response = client.responses.create(
+            model=MODEL,
+            instructions=&quot;Answer briefly in Australian English.&quot;,
+            conversation=conversation.id,
+            input=question,
+        )
+        print(&quot;You:&quot;, question)
+        print(&quot;Assistant:&quot;, response.output_text)
+        print()
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+    client = project.get_openai_client()
+
+    show_deployments(project)
+    ask_one_question(client)
+    have_a_conversation(client)
+</code></pre></details></li>
+</ol>
+<h2 id="task-5-stream-the-answer">Task 5: Stream the answer</h2>
+<p>Waiting for a long answer to appear all at once feels broken. Streaming sends it in pieces as it is written.</p>
+<ol>
+<li><p>Add the last function:</p>
+<pre><code class="language-python">def stream_an_answer(client):
+    &quot;&quot;&quot;Print the answer word by word, as the model produces it.&quot;&quot;&quot;
+    print(&quot;\n=== A streamed answer ===&quot;)
+
+    stream = client.responses.create(
+        model=MODEL,
+        input=&quot;In two sentences, explain why a council assistant should cite its sources.&quot;,
+        stream=True,
+    )
+
+    for event in stream:
+        # A stream sends many kinds of event. We only want the text pieces.
+        if event.type == &quot;response.output_text.delta&quot;:
+            print(event.delta, end=&quot;&quot;, flush=True)
+
+    print()
+</code></pre></li>
+<li><p>Add the call to your main block:</p>
+<pre><code class="language-python">    stream_an_answer(client)
+</code></pre></li>
+<li><p>Run it and watch the text appear:</p>
+<pre><code class="language-powershell">python hello_foundry.py
+</code></pre></li>
+<li><p><strong>Have a look at what else is in that stream.</strong> Temporarily change the <code>if</code> line to print every event type instead:</p>
+<pre><code class="language-python">        print(event.type)
+</code></pre>
+<p>Run it, see the sequence of events, then put the original line back.</p>
+<blockquote><p><strong>Note</strong>: You have just seen the raw shape of a stream: lifecycle events, many small text deltas, then a completion event. Exercise 13 forwards these same deltas to a browser, and uses the completion event to know the answer actually finished rather than the connection dropping.</p></blockquote></li>
+<li><p>That is the finished file:</p>
+<details class="wholefile"><summary>Show the complete <code>hello_foundry.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 01 - Get started with Microsoft Foundry.
+
+The finished file. You build this up one task at a time in the exercise.
+Run it with:  python hello_foundry.py
+&quot;&quot;&quot;
+
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+
+
+# --- Task 2 -----------------------------------------------------------------
+def show_deployments(project):
+    &quot;&quot;&quot;Print the models this project can use.&quot;&quot;&quot;
+    print(&quot;\n=== Models deployed in this project ===&quot;)
+    for deployment in project.deployments.list():
+        print(&quot; -&quot;, deployment.name)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def ask_one_question(client):
+    &quot;&quot;&quot;Send one question and print the answer.&quot;&quot;&quot;
+    print(&quot;\n=== One question, one answer ===&quot;)
+
+    response = client.responses.create(
+        model=MODEL,
+        instructions=&quot;You are a council assistant. Answer briefly in Australian English.&quot;,
+        input=&quot;A resident&#x27;s bin was not collected. What should they do?&quot;,
+    )
+
+    print(response.output_text)
+
+
+# --- Task 4 -----------------------------------------------------------------
+def have_a_conversation(client):
+    &quot;&quot;&quot;Ask two questions that share one conversation, so the second remembers.&quot;&quot;&quot;
+    print(&quot;\n=== A conversation that remembers ===&quot;)
+
+    # A conversation is a server-side resource. It is what carries the context.
+    conversation = client.conversations.create()
+
+    questions = [
+        &quot;My case reference is ACME-204. Please remember it.&quot;,
+        &quot;What case reference did I give you?&quot;,
+    ]
+
+    for question in questions:
+        response = client.responses.create(
+            model=MODEL,
+            instructions=&quot;Answer briefly in Australian English.&quot;,
+            conversation=conversation.id,
+            input=question,
+        )
+        print(&quot;You:&quot;, question)
+        print(&quot;Assistant:&quot;, response.output_text)
+        print()
+
+
+# --- Task 5 -----------------------------------------------------------------
+def stream_an_answer(client):
+    &quot;&quot;&quot;Print the answer word by word, as the model produces it.&quot;&quot;&quot;
+    print(&quot;\n=== A streamed answer ===&quot;)
+
+    stream = client.responses.create(
+        model=MODEL,
+        input=&quot;In two sentences, explain why a council assistant should cite its sources.&quot;,
+        stream=True,
+    )
+
+    for event in stream:
+        # A stream sends many kinds of event. We only want the text pieces.
+        if event.type == &quot;response.output_text.delta&quot;:
+            print(event.delta, end=&quot;&quot;, flush=True)
+
+    print()
+
+
+# --- Main -------------------------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+    client = project.get_openai_client()
+
+    show_deployments(project)
+    ask_one_question(client)
+    have_a_conversation(client)
+    stream_an_answer(client)
+
+    print(&quot;\nDone.&quot;)
+</code></pre></details></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. What signs you in, in this exercise?</summary><ul><li>A. An API key in <code>.env</code></li><li>B. Your Entra ID sign-in, via <code>DefaultAzureCredential</code></li><li>C. The project endpoint URL</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>The same line finds your <code>az login</code> session on a laptop and a managed identity in Azure, so the code does not change when you deploy it.</p></div></details>
+<details class="kc"><summary>2. The second question got the case reference right. Why?</summary><ul><li>A. The model remembered it</li><li>B. It was in the instructions</li><li>C. Both requests used the same conversation</li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>You proved this by removing the <code>conversation</code> argument and watching the memory disappear. The model itself is stateless.</p></div></details>
+<details class="kc"><summary>3. Which event carries the pieces of text when streaming?</summary><ul><li>A. <code>response.output_text.delta</code></li><li>B. <code>conversation.created</code></li><li>C. <code>response.done</code></li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>The others tell you about the lifecycle. Only the delta events carry words.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You connected to Foundry with your own identity, checked which models you can actually use, asked a question, held a conversation, and streamed an answer.</p>
+<p>More usefully, you proved to yourself that the model has no memory — the conversation object does. Keep <code>hello_foundry.py</code>; Exercise 02 starts from the same four lines of setup.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>This exercise creates one thing in Azure: the conversation in Task 4. It is small and it will age out, but you can leave nothing behind by adding <code>store=False</code> to the calls that do not need to be kept.</p>
+<p>Nothing else to do. Your virtual environment and <code>.env</code> stay on your machine — and <code>.env</code> should never be committed to source control.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/foundry/how-to/develop/sdk-overview">Foundry SDK overview</a></li><li><a href="https://learn.microsoft.com/azure/foundry/agents/quickstarts/responses-api">Responses API</a></li></ul>
+<div class="pager"><a href="../../index.html">&#8592; All exercises</a><a href="02-choose-a-model.html">Choose a model &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,5 @@
+[
+  {"question": "How many days of annual leave do full-time staff receive?", "groups": ["staff"], "relevant_sources": ["acme-leave-policy.pdf"]},
+  {"question": "What is the nightly accommodation limit?", "groups": ["staff"], "relevant_sources": ["acme-travel-policy.pdf"]},
+  {"question": "Which gifts must be recorded in the register?", "groups": ["staff"], "relevant_sources": ["acme-code-of-conduct.pdf"]}
+]

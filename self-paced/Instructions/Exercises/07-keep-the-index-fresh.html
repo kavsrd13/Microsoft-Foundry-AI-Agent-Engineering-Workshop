@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Keep the index fresh, and read a scanned document | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-fingerprint-everything">Task 2: Fingerprint everything</a></li><li><a href="#task-3-sync">Task 3: Sync</a></li><li><a href="#task-4-watch-the-whole-cycle">Task 4: Watch the whole cycle</a></li><li><a href="#task-5-read-a-scanned-document">Task 5: Read a scanned document</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Keep the index fresh, and read a scanned document</h1>
+<p>Documents change. Policies get updated, records get withdrawn. An index that does not keep up will confidently quote something that was retracted last month.</p>
+<p>The whole add / change / delete cycle runs in a single script here, so you can watch it happen rather than typing twelve commands.</p>
+<p>This exercise takes approximately <strong>75</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/07-keep-the-index-fresh</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: adds <code>PyMuPDF</code> and Document Intelligence</div></div>
+<div class="tags"><span class="tag alt">RAG</span><span class="tag">Module 4</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Detect which chunks changed, using a fingerprint of each one.</li><li>Re-process only what changed, and prove a no-op run costs nothing.</li><li>Delete chunks whose source document has gone.</li><li>Read a scanned, image-only PDF with OCR.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>An Azure AI Search service, as in Exercise 05.</li><li>A Document Intelligence resource, as in Exercise 04.</li></ul>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd labs/07-keep-the-index-fresh
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre></li>
+<li><pre><code class="language-text">SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net
+SEARCH_INDEX=lab07-YOUR-INITIALS
+DOCUMENT_INTELLIGENCE_ENDPOINT=https://YOUR-DI.cognitiveservices.azure.com
+</code></pre></li>
+<li><p>Look at <code>data/sources.json</code>. It is the list of documents that should be in the index — the single source of truth for what belongs there.</p></li>
+<li><p>Create <code>keep_fresh.py</code>:</p>
+<pre><code class="language-python">&quot;&quot;&quot;Keep the index fresh.&quot;&quot;&quot;
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+import pymupdf
+from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.identity import DefaultAzureCredential
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchableField,
+    SearchIndex,
+    SimpleField,
+)
+from dotenv import load_dotenv
+
+load_dotenv()
+
+INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
+MANIFEST_PATH = Path(&quot;data/manifest.json&quot;)
+EXTRA_FILE = Path(&quot;data/service-hours.txt&quot;)
+</code></pre></li>
+</ol>
+<h2 id="task-2-fingerprint-everything">Task 2: Fingerprint everything</h2>
+<p>The trick is simple. Hash every chunk. Keep the hashes. Next time, hash again and compare.</p>
+<ol>
+<li><p>Add these four small functions:</p>
+<pre><code class="language-python">def build_manifest(chunks):
+    &quot;&quot;&quot;A fingerprint of every chunk: {id -&gt; hash of its contents}.&quot;&quot;&quot;
+    manifest = {}
+    for chunk in chunks:
+        as_text = json.dumps(chunk, sort_keys=True)
+        manifest[chunk[&quot;id&quot;]] = hashlib.sha256(as_text.encode()).hexdigest()
+    return manifest
+
+
+def find_changes(old_manifest, new_manifest):
+    &quot;&quot;&quot;Compare two fingerprints. What is new or changed? What has gone?&quot;&quot;&quot;
+    to_upload = []
+    for chunk_id, fingerprint in new_manifest.items():
+        if old_manifest.get(chunk_id) != fingerprint:
+            to_upload.append(chunk_id)
+
+    to_delete = []
+    for chunk_id in old_manifest:
+        if chunk_id not in new_manifest:
+            to_delete.append(chunk_id)
+
+    return to_upload, to_delete
+
+
+def load_manifest():
+    if MANIFEST_PATH.exists():
+        return json.loads(MANIFEST_PATH.read_text(encoding=&quot;utf-8&quot;))
+    return {}
+
+
+def save_manifest(manifest):
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding=&quot;utf-8&quot;)
+</code></pre></li>
+<li><p>That is the entire idea:</p>
+<ul><li><strong>Different hash, or a new id</strong> → upload it.</li><li><strong>An id we had before but do not have now</strong> → delete it.</li><li><strong>Same id, same hash</strong> → do nothing, and pay nothing.</li></ul>
+<blockquote><p><strong>Note</strong>: This only works because Exercise 04 gave every chunk a <strong>stable id</strong> built from its source, page and position. If ids changed on every run, everything would look new every time and you would re-embed the whole corpus nightly.</p></blockquote></li>
+</ol>
+<h2 id="task-3-sync">Task 3: Sync</h2>
+<ol>
+<li><p>Add these two functions:</p>
+<pre><code class="language-python">def read_all_sources():
+    &quot;&quot;&quot;Read every file listed in sources.json and cut it into chunks.&quot;&quot;&quot;
+    sources = json.loads(Path(&quot;data/sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
+    chunks = []
+
+    for source in sources:
+        path = Path(&quot;data&quot;) / source[&quot;file&quot;]
+
+        if path.suffix == &quot;.txt&quot;:
+            pages = [(1, path.read_text(encoding=&quot;utf-8&quot;))]
+        else:
+            with pymupdf.open(path) as pdf:
+                pages = [(number + 1, page.get_text())
+                         for number, page in enumerate(pdf)]
+
+        for page_number, text in pages:
+            if not text.strip():
+                raise ValueError(
+                    f&quot;{path.name} has no text in it. It is probably a scan - &quot;
+                    f&quot;see Task 6.&quot;
+                )
+            # One chunk per page keeps this lab focused on change detection.
+            chunks.append({
+                &quot;id&quot;: f&quot;{path.stem}-p{page_number}&quot;,
+                &quot;content&quot;: text.strip(),
+                &quot;source&quot;: path.name,
+            })
+
+    return chunks
+
+
+def sync(search_client, label):
+    &quot;&quot;&quot;Upload what changed, delete what has gone, and leave the rest alone.&quot;&quot;&quot;
+    chunks = read_all_sources()
+
+    old_manifest = load_manifest()
+    new_manifest = build_manifest(chunks)
+    to_upload, to_delete = find_changes(old_manifest, new_manifest)
+
+    if to_upload:
+        documents = [c for c in chunks if c[&quot;id&quot;] in to_upload]
+        search_client.upload_documents(documents)
+
+    if to_delete:
+        search_client.delete_documents([{&quot;id&quot;: chunk_id} for chunk_id in to_delete])
+
+    # Only record the new state once Search has accepted everything. If the
+    # upload failed above, we would not get here, and the next run would
+    # simply try the same work again.
+    save_manifest(new_manifest)
+
+    unchanged = len(new_manifest) - len(to_upload)
+    print(f&quot;  {label}: {len(to_upload)} uploaded, {len(to_delete)} deleted, &quot;
+          f&quot;{unchanged} unchanged&quot;)
+</code></pre></li>
+<li><p>Look at the last thing <code>sync</code> does, and the comment above it:</p>
+<pre><code class="language-python">    # Only record the new state once Search has accepted everything.
+    save_manifest(new_manifest)
+</code></pre>
+<blockquote><p><strong>Note</strong>: The manifest is saved <strong>after</strong> the uploads and deletes succeed. If an upload throws, you never reach that line — so the next run sees the old manifest and simply tries the same work again. Crash halfway through and you lose nothing.</p></blockquote></li>
+</ol>
+<h2 id="task-4-watch-the-whole-cycle">Task 4: Watch the whole cycle</h2>
+<ol>
+<li><p>Add these functions:</p>
+<pre><code class="language-python">def add_extra_document(closing_time):
+    &quot;&quot;&quot;Add (or change) a small text file, and list it in sources.json.&quot;&quot;&quot;
+    EXTRA_FILE.write_text(
+        &quot;SYNTHETIC TRAINING RECORD\n\n&quot;
+        f&quot;The service desk closes at {closing_time} on Fridays.&quot;,
+        encoding=&quot;utf-8&quot;,
+    )
+
+    sources_path = Path(&quot;data/sources.json&quot;)
+    sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
+
+    if not any(s[&quot;file&quot;] == EXTRA_FILE.name for s in sources):
+        sources.append({&quot;file&quot;: EXTRA_FILE.name, &quot;allowed_groups&quot;: [&quot;staff&quot;]})
+        sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
+
+
+def remove_extra_document():
+    sources_path = Path(&quot;data/sources.json&quot;)
+    sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
+    sources = [s for s in sources if s[&quot;file&quot;] != EXTRA_FILE.name]
+    sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
+    EXTRA_FILE.unlink(missing_ok=True)
+
+
+def ask(search_client, question):
+    &quot;&quot;&quot;A quick look at what the index can currently support.&quot;&quot;&quot;
+    hits = list(search_client.search(question, top=1, select=[&quot;source&quot;, &quot;content&quot;]))
+    if not hits:
+        print(f&quot;      -&gt; nothing in the index answers that&quot;)
+    else:
+        preview = hits[0][&quot;content&quot;][:70].replace(&quot;\n&quot;, &quot; &quot;)
+        print(f&quot;      -&gt; {hits[0][&#x27;source&#x27;]}: {preview}&quot;)
+
+
+def run_the_whole_cycle(search_client):
+    &quot;&quot;&quot;Add, change and remove a document, syncing after each step.&quot;&quot;&quot;
+    print(&quot;\n=== The freshness cycle ===&quot;)
+
+    print(&quot;\n1. First sync - everything is new&quot;)
+    sync(search_client, &quot;sync&quot;)
+
+    print(&quot;\n2. Sync again with nothing changed - this should cost nothing&quot;)
+    sync(search_client, &quot;sync&quot;)
+
+    print(&quot;\n3. Add a new document that closes at 4 pm&quot;)
+    add_extra_document(&quot;4 pm&quot;)
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\n4. Change it to 6 pm - the old text must not survive&quot;)
+    add_extra_document(&quot;6 pm&quot;)
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\n5. Remove the document - the answer must go with it&quot;)
+    remove_extra_document()
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\nStep 2 is the one that matters for your bill: no changes,&quot;)
+    print(&quot;no work. Step 5 is the one that matters for correctness.&quot;)
+</code></pre></li>
+<li><p>Add a main block that creates the index and runs the cycle:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+    search_client = SearchClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], INDEX_NAME, credential)
+
+    index_client.create_or_update_index(SearchIndex(
+        name=INDEX_NAME,
+        fields=[
+            SimpleField(name=&quot;id&quot;, type=&quot;Edm.String&quot;, key=True),
+            SearchableField(name=&quot;content&quot;, type=&quot;Edm.String&quot;),
+            SimpleField(name=&quot;source&quot;, type=&quot;Edm.String&quot;),
+        ],
+    ))
+
+    run_the_whole_cycle(search_client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python keep_fresh.py
+</code></pre></li>
+<li><p>Go through the five steps in the output and check each one:</p>
+<table><thead><tr><th>Step</th><th>What you should see</th><th>Why it matters</th></tr></thead><tbody><tr><td>1. First sync</td><td>Everything uploaded</td><td>A cold start</td></tr><tr><td>2. Sync again, unchanged</td><td><strong>0 uploaded, 0 deleted</strong></td><td>This is your bill. No changes, no work.</td></tr><tr><td>3. Add a document</td><td>1 uploaded, answer says <strong>4 pm</strong></td><td>New content is findable</td></tr><tr><td>4. Change it</td><td>1 uploaded, answer says <strong>6 pm</strong></td><td>The old text must not survive</td></tr><tr><td>5. Delete it</td><td>1 deleted, <strong>no answer at all</strong></td><td>Withdrawn content must disappear</td></tr></tbody></table>
+<blockquote class="ok"><p><strong>Check</strong>: Step 2 and step 5 are the two that matter. Step 2 is cost; step 5 is correctness.</p></blockquote></li>
+<li><p><strong>If step 4 still says 4 pm</strong>, the old chunk was not replaced. That is exactly the bug this mechanism exists to prevent — a stale passage still sitting in the index, ready to be quoted as current policy.</p></li>
+<li><p><strong>Try one more thing.</strong> Delete <code>data/manifest.json</code> and run again.</p>
+<blockquote class="ok"><p><strong>Check</strong>: Everything uploads again, because you threw away the memory of what was already there.</p></blockquote>
+<blockquote class="warn"><p><strong>Caution</strong>: The manifest belongs with the index. If you ever rebuild the index, delete the manifest too, or sync will think work is already done that is not.</p></blockquote></li>
+<li><details class="wholefile"><summary>Show the complete <code>keep_fresh.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 07 - Keep the index fresh.
+
+Documents change. This shows how to update an index without re-processing
+everything, and how to handle a scanned PDF that has no text in it.
+
+The whole add / change / delete cycle runs in one go, so you can watch it.
+
+Run it with:  python keep_fresh.py
+&quot;&quot;&quot;
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+import pymupdf
+from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.identity import DefaultAzureCredential
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchableField,
+    SearchIndex,
+    SimpleField,
+)
+from dotenv import load_dotenv
+
+load_dotenv()
+
+INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
+MANIFEST_PATH = Path(&quot;data/manifest.json&quot;)
+EXTRA_FILE = Path(&quot;data/service-hours.txt&quot;)
+
+
+# --- Task 2 -----------------------------------------------------------------
+def build_manifest(chunks):
+    &quot;&quot;&quot;A fingerprint of every chunk: {id -&gt; hash of its contents}.&quot;&quot;&quot;
+    manifest = {}
+    for chunk in chunks:
+        as_text = json.dumps(chunk, sort_keys=True)
+        manifest[chunk[&quot;id&quot;]] = hashlib.sha256(as_text.encode()).hexdigest()
+    return manifest
+
+
+def find_changes(old_manifest, new_manifest):
+    &quot;&quot;&quot;Compare two fingerprints. What is new or changed? What has gone?&quot;&quot;&quot;
+    to_upload = []
+    for chunk_id, fingerprint in new_manifest.items():
+        if old_manifest.get(chunk_id) != fingerprint:
+            to_upload.append(chunk_id)
+
+    to_delete = []
+    for chunk_id in old_manifest:
+        if chunk_id not in new_manifest:
+            to_delete.append(chunk_id)
+
+    return to_upload, to_delete
+
+
+def load_manifest():
+    if MANIFEST_PATH.exists():
+        return json.loads(MANIFEST_PATH.read_text(encoding=&quot;utf-8&quot;))
+    return {}
+
+
+def save_manifest(manifest):
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding=&quot;utf-8&quot;)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def read_all_sources():
+    &quot;&quot;&quot;Read every file listed in sources.json and cut it into chunks.&quot;&quot;&quot;
+    sources = json.loads(Path(&quot;data/sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
+    chunks = []
+
+    for source in sources:
+        path = Path(&quot;data&quot;) / source[&quot;file&quot;]
+
+        if path.suffix == &quot;.txt&quot;:
+            pages = [(1, path.read_text(encoding=&quot;utf-8&quot;))]
+        else:
+            with pymupdf.open(path) as pdf:
+                pages = [(number + 1, page.get_text())
+                         for number, page in enumerate(pdf)]
+
+        for page_number, text in pages:
+            if not text.strip():
+                raise ValueError(
+                    f&quot;{path.name} has no text in it. It is probably a scan - &quot;
+                    f&quot;see Task 6.&quot;
+                )
+            # One chunk per page keeps this lab focused on change detection.
+            chunks.append({
+                &quot;id&quot;: f&quot;{path.stem}-p{page_number}&quot;,
+                &quot;content&quot;: text.strip(),
+                &quot;source&quot;: path.name,
+            })
+
+    return chunks
+
+
+def sync(search_client, label):
+    &quot;&quot;&quot;Upload what changed, delete what has gone, and leave the rest alone.&quot;&quot;&quot;
+    chunks = read_all_sources()
+
+    old_manifest = load_manifest()
+    new_manifest = build_manifest(chunks)
+    to_upload, to_delete = find_changes(old_manifest, new_manifest)
+
+    if to_upload:
+        documents = [c for c in chunks if c[&quot;id&quot;] in to_upload]
+        search_client.upload_documents(documents)
+
+    if to_delete:
+        search_client.delete_documents([{&quot;id&quot;: chunk_id} for chunk_id in to_delete])
+
+    # Only record the new state once Search has accepted everything. If the
+    # upload failed above, we would not get here, and the next run would
+    # simply try the same work again.
+    save_manifest(new_manifest)
+
+    unchanged = len(new_manifest) - len(to_upload)
+    print(f&quot;  {label}: {len(to_upload)} uploaded, {len(to_delete)} deleted, &quot;
+          f&quot;{unchanged} unchanged&quot;)
+
+
+# --- Task 4 -----------------------------------------------------------------
+def add_extra_document(closing_time):
+    &quot;&quot;&quot;Add (or change) a small text file, and list it in sources.json.&quot;&quot;&quot;
+    EXTRA_FILE.write_text(
+        &quot;SYNTHETIC TRAINING RECORD\n\n&quot;
+        f&quot;The service desk closes at {closing_time} on Fridays.&quot;,
+        encoding=&quot;utf-8&quot;,
+    )
+
+    sources_path = Path(&quot;data/sources.json&quot;)
+    sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
+
+    if not any(s[&quot;file&quot;] == EXTRA_FILE.name for s in sources):
+        sources.append({&quot;file&quot;: EXTRA_FILE.name, &quot;allowed_groups&quot;: [&quot;staff&quot;]})
+        sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
+
+
+def remove_extra_document():
+    sources_path = Path(&quot;data/sources.json&quot;)
+    sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
+    sources = [s for s in sources if s[&quot;file&quot;] != EXTRA_FILE.name]
+    sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
+    EXTRA_FILE.unlink(missing_ok=True)
+
+
+def ask(search_client, question):
+    &quot;&quot;&quot;A quick look at what the index can currently support.&quot;&quot;&quot;
+    hits = list(search_client.search(question, top=1, select=[&quot;source&quot;, &quot;content&quot;]))
+    if not hits:
+        print(f&quot;      -&gt; nothing in the index answers that&quot;)
+    else:
+        preview = hits[0][&quot;content&quot;][:70].replace(&quot;\n&quot;, &quot; &quot;)
+        print(f&quot;      -&gt; {hits[0][&#x27;source&#x27;]}: {preview}&quot;)
+
+
+def run_the_whole_cycle(search_client):
+    &quot;&quot;&quot;Add, change and remove a document, syncing after each step.&quot;&quot;&quot;
+    print(&quot;\n=== The freshness cycle ===&quot;)
+
+    print(&quot;\n1. First sync - everything is new&quot;)
+    sync(search_client, &quot;sync&quot;)
+
+    print(&quot;\n2. Sync again with nothing changed - this should cost nothing&quot;)
+    sync(search_client, &quot;sync&quot;)
+
+    print(&quot;\n3. Add a new document that closes at 4 pm&quot;)
+    add_extra_document(&quot;4 pm&quot;)
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\n4. Change it to 6 pm - the old text must not survive&quot;)
+    add_extra_document(&quot;6 pm&quot;)
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\n5. Remove the document - the answer must go with it&quot;)
+    remove_extra_document()
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\nStep 2 is the one that matters for your bill: no changes,&quot;)
+    print(&quot;no work. Step 5 is the one that matters for correctness.&quot;)
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+    search_client = SearchClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], INDEX_NAME, credential)
+
+    index_client.create_or_update_index(SearchIndex(
+        name=INDEX_NAME,
+        fields=[
+            SimpleField(name=&quot;id&quot;, type=&quot;Edm.String&quot;, key=True),
+            SearchableField(name=&quot;content&quot;, type=&quot;Edm.String&quot;),
+            SimpleField(name=&quot;source&quot;, type=&quot;Edm.String&quot;),
+        ],
+    ))
+
+    run_the_whole_cycle(search_client)
+</code></pre></details></li>
+</ol>
+<h2 id="task-5-read-a-scanned-document">Task 5: Read a scanned document</h2>
+<p>Plenty of council records are scans — a photocopy saved as a PDF. There is no text in them at all, just pictures of text.</p>
+<ol>
+<li><p>Add these two functions:</p>
+<pre><code class="language-python">def make_a_scanned_pdf():
+    &quot;&quot;&quot;Turn a normal PDF into an image-only one, so we have something to OCR.&quot;&quot;&quot;
+    print(&quot;\n=== Making a scanned document ===&quot;)
+
+    original_path = Path(&quot;data/benefits/acme-code-of-conduct.pdf&quot;)
+    scanned_path = Path(&quot;data/scanned-conduct.pdf&quot;)
+
+    with pymupdf.open(original_path) as original, pymupdf.open() as scanned:
+        for page in original:
+            picture = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))
+            new_page = scanned.new_page(width=page.rect.width,
+                                        height=page.rect.height)
+            new_page.insert_image(new_page.rect, stream=picture.tobytes(&quot;png&quot;))
+        scanned.save(scanned_path)
+
+    print(&quot;created&quot;, scanned_path)
+
+    # Prove it has no text in it.
+    with pymupdf.open(scanned_path) as pdf:
+        text = &quot;&quot;.join(page.get_text() for page in pdf)
+    print(f&quot;normal text extraction finds {len(text.strip())} characters - &quot;
+          f&quot;it is just pictures&quot;)
+
+    return scanned_path
+
+
+def read_the_scan_with_ocr(scanned_path):
+    &quot;&quot;&quot;Document Intelligence can read the pixels.&quot;&quot;&quot;
+    print(&quot;\n=== Reading it with OCR ===&quot;)
+
+    client = DocumentIntelligenceClient(
+        os.environ[&quot;DOCUMENT_INTELLIGENCE_ENDPOINT&quot;],
+        DefaultAzureCredential(),
+    )
+
+    with open(scanned_path, &quot;rb&quot;) as file:
+        result = client.begin_analyze_document(&quot;prebuilt-read&quot;, body=file).result()
+
+    for page in result.pages:
+        lines = [line.content for line in page.lines]
+        print(f&quot;  page {page.page_number}: {len(lines)} lines found&quot;)
+        for line in lines[:3]:
+            print(&quot;     &quot;, line)
+
+    print(&quot;\nReading embedded text is not OCR. OCR reads the image itself.&quot;)
+</code></pre></li>
+<li><p>Call them:</p>
+<pre><code class="language-python">    scanned_path = make_a_scanned_pdf()
+    read_the_scan_with_ocr(scanned_path)
+</code></pre></li>
+<li><pre><code class="language-powershell">python keep_fresh.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Normal extraction finds <strong>0 characters</strong>. OCR then finds the actual lines of text.</p></blockquote></li>
+<li><p>Two distinctions worth writing down:</p>
+<ul><li>Reading embedded text out of a PDF is <strong>not OCR</strong>. It reads text that is already there; it cannot read pixels.</li><li>OCR gives you <strong>lines</strong>, not paragraphs. It is not layout-aware the way the <code>prebuilt-layout</code> model in Exercise 04 is.</li></ul>
+<blockquote><p><strong>Note</strong>: Notice also how <code>read_all_sources</code> behaves on a scan: it raises a clear error telling you to use OCR. A silent empty extraction would be far worse — you would index nothing and never know.</p></blockquote></li>
+<li><p>The finished file:</p>
+<details class="wholefile"><summary>Show the complete <code>keep_fresh.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 07 - Keep the index fresh.
+
+Documents change. This shows how to update an index without re-processing
+everything, and how to handle a scanned PDF that has no text in it.
+
+The whole add / change / delete cycle runs in one go, so you can watch it.
+
+Run it with:  python keep_fresh.py
+&quot;&quot;&quot;
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+import pymupdf
+from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.identity import DefaultAzureCredential
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchableField,
+    SearchIndex,
+    SimpleField,
+)
+from dotenv import load_dotenv
+
+load_dotenv()
+
+INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
+MANIFEST_PATH = Path(&quot;data/manifest.json&quot;)
+EXTRA_FILE = Path(&quot;data/service-hours.txt&quot;)
+
+
+# --- Task 2 -----------------------------------------------------------------
+def build_manifest(chunks):
+    &quot;&quot;&quot;A fingerprint of every chunk: {id -&gt; hash of its contents}.&quot;&quot;&quot;
+    manifest = {}
+    for chunk in chunks:
+        as_text = json.dumps(chunk, sort_keys=True)
+        manifest[chunk[&quot;id&quot;]] = hashlib.sha256(as_text.encode()).hexdigest()
+    return manifest
+
+
+def find_changes(old_manifest, new_manifest):
+    &quot;&quot;&quot;Compare two fingerprints. What is new or changed? What has gone?&quot;&quot;&quot;
+    to_upload = []
+    for chunk_id, fingerprint in new_manifest.items():
+        if old_manifest.get(chunk_id) != fingerprint:
+            to_upload.append(chunk_id)
+
+    to_delete = []
+    for chunk_id in old_manifest:
+        if chunk_id not in new_manifest:
+            to_delete.append(chunk_id)
+
+    return to_upload, to_delete
+
+
+def load_manifest():
+    if MANIFEST_PATH.exists():
+        return json.loads(MANIFEST_PATH.read_text(encoding=&quot;utf-8&quot;))
+    return {}
+
+
+def save_manifest(manifest):
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding=&quot;utf-8&quot;)
+
+
+# --- Task 3 -----------------------------------------------------------------
+def read_all_sources():
+    &quot;&quot;&quot;Read every file listed in sources.json and cut it into chunks.&quot;&quot;&quot;
+    sources = json.loads(Path(&quot;data/sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
+    chunks = []
+
+    for source in sources:
+        path = Path(&quot;data&quot;) / source[&quot;file&quot;]
+
+        if path.suffix == &quot;.txt&quot;:
+            pages = [(1, path.read_text(encoding=&quot;utf-8&quot;))]
+        else:
+            with pymupdf.open(path) as pdf:
+                pages = [(number + 1, page.get_text())
+                         for number, page in enumerate(pdf)]
+
+        for page_number, text in pages:
+            if not text.strip():
+                raise ValueError(
+                    f&quot;{path.name} has no text in it. It is probably a scan - &quot;
+                    f&quot;see Task 6.&quot;
+                )
+            # One chunk per page keeps this lab focused on change detection.
+            chunks.append({
+                &quot;id&quot;: f&quot;{path.stem}-p{page_number}&quot;,
+                &quot;content&quot;: text.strip(),
+                &quot;source&quot;: path.name,
+            })
+
+    return chunks
+
+
+def sync(search_client, label):
+    &quot;&quot;&quot;Upload what changed, delete what has gone, and leave the rest alone.&quot;&quot;&quot;
+    chunks = read_all_sources()
+
+    old_manifest = load_manifest()
+    new_manifest = build_manifest(chunks)
+    to_upload, to_delete = find_changes(old_manifest, new_manifest)
+
+    if to_upload:
+        documents = [c for c in chunks if c[&quot;id&quot;] in to_upload]
+        search_client.upload_documents(documents)
+
+    if to_delete:
+        search_client.delete_documents([{&quot;id&quot;: chunk_id} for chunk_id in to_delete])
+
+    # Only record the new state once Search has accepted everything. If the
+    # upload failed above, we would not get here, and the next run would
+    # simply try the same work again.
+    save_manifest(new_manifest)
+
+    unchanged = len(new_manifest) - len(to_upload)
+    print(f&quot;  {label}: {len(to_upload)} uploaded, {len(to_delete)} deleted, &quot;
+          f&quot;{unchanged} unchanged&quot;)
+
+
+# --- Task 4 -----------------------------------------------------------------
+def add_extra_document(closing_time):
+    &quot;&quot;&quot;Add (or change) a small text file, and list it in sources.json.&quot;&quot;&quot;
+    EXTRA_FILE.write_text(
+        &quot;SYNTHETIC TRAINING RECORD\n\n&quot;
+        f&quot;The service desk closes at {closing_time} on Fridays.&quot;,
+        encoding=&quot;utf-8&quot;,
+    )
+
+    sources_path = Path(&quot;data/sources.json&quot;)
+    sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
+
+    if not any(s[&quot;file&quot;] == EXTRA_FILE.name for s in sources):
+        sources.append({&quot;file&quot;: EXTRA_FILE.name, &quot;allowed_groups&quot;: [&quot;staff&quot;]})
+        sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
+
+
+def remove_extra_document():
+    sources_path = Path(&quot;data/sources.json&quot;)
+    sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
+    sources = [s for s in sources if s[&quot;file&quot;] != EXTRA_FILE.name]
+    sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
+    EXTRA_FILE.unlink(missing_ok=True)
+
+
+def ask(search_client, question):
+    &quot;&quot;&quot;A quick look at what the index can currently support.&quot;&quot;&quot;
+    hits = list(search_client.search(question, top=1, select=[&quot;source&quot;, &quot;content&quot;]))
+    if not hits:
+        print(f&quot;      -&gt; nothing in the index answers that&quot;)
+    else:
+        preview = hits[0][&quot;content&quot;][:70].replace(&quot;\n&quot;, &quot; &quot;)
+        print(f&quot;      -&gt; {hits[0][&#x27;source&#x27;]}: {preview}&quot;)
+
+
+def run_the_whole_cycle(search_client):
+    &quot;&quot;&quot;Add, change and remove a document, syncing after each step.&quot;&quot;&quot;
+    print(&quot;\n=== The freshness cycle ===&quot;)
+
+    print(&quot;\n1. First sync - everything is new&quot;)
+    sync(search_client, &quot;sync&quot;)
+
+    print(&quot;\n2. Sync again with nothing changed - this should cost nothing&quot;)
+    sync(search_client, &quot;sync&quot;)
+
+    print(&quot;\n3. Add a new document that closes at 4 pm&quot;)
+    add_extra_document(&quot;4 pm&quot;)
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\n4. Change it to 6 pm - the old text must not survive&quot;)
+    add_extra_document(&quot;6 pm&quot;)
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\n5. Remove the document - the answer must go with it&quot;)
+    remove_extra_document()
+    sync(search_client, &quot;sync&quot;)
+    ask(search_client, &quot;When does the service desk close on Fridays?&quot;)
+
+    print(&quot;\nStep 2 is the one that matters for your bill: no changes,&quot;)
+    print(&quot;no work. Step 5 is the one that matters for correctness.&quot;)
+
+
+# --- Task 6 -----------------------------------------------------------------
+def make_a_scanned_pdf():
+    &quot;&quot;&quot;Turn a normal PDF into an image-only one, so we have something to OCR.&quot;&quot;&quot;
+    print(&quot;\n=== Making a scanned document ===&quot;)
+
+    original_path = Path(&quot;data/benefits/acme-code-of-conduct.pdf&quot;)
+    scanned_path = Path(&quot;data/scanned-conduct.pdf&quot;)
+
+    with pymupdf.open(original_path) as original, pymupdf.open() as scanned:
+        for page in original:
+            picture = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))
+            new_page = scanned.new_page(width=page.rect.width,
+                                        height=page.rect.height)
+            new_page.insert_image(new_page.rect, stream=picture.tobytes(&quot;png&quot;))
+        scanned.save(scanned_path)
+
+    print(&quot;created&quot;, scanned_path)
+
+    # Prove it has no text in it.
+    with pymupdf.open(scanned_path) as pdf:
+        text = &quot;&quot;.join(page.get_text() for page in pdf)
+    print(f&quot;normal text extraction finds {len(text.strip())} characters - &quot;
+          f&quot;it is just pictures&quot;)
+
+    return scanned_path
+
+
+def read_the_scan_with_ocr(scanned_path):
+    &quot;&quot;&quot;Document Intelligence can read the pixels.&quot;&quot;&quot;
+    print(&quot;\n=== Reading it with OCR ===&quot;)
+
+    client = DocumentIntelligenceClient(
+        os.environ[&quot;DOCUMENT_INTELLIGENCE_ENDPOINT&quot;],
+        DefaultAzureCredential(),
+    )
+
+    with open(scanned_path, &quot;rb&quot;) as file:
+        result = client.begin_analyze_document(&quot;prebuilt-read&quot;, body=file).result()
+
+    for page in result.pages:
+        lines = [line.content for line in page.lines]
+        print(f&quot;  page {page.page_number}: {len(lines)} lines found&quot;)
+        for line in lines[:3]:
+            print(&quot;     &quot;, line)
+
+    print(&quot;\nReading embedded text is not OCR. OCR reads the image itself.&quot;)
+
+
+# --- Task 7 -----------------------------------------------------------------
+def clean_up(index_client):
+    print(&quot;\n=== Cleaning up ===&quot;)
+    if not INDEX_NAME.startswith(&quot;lab07-&quot;):
+        raise ValueError(&quot;SEARCH_INDEX must start with &#x27;lab07-&#x27;&quot;)
+    index_client.delete_index(INDEX_NAME)
+    MANIFEST_PATH.unlink(missing_ok=True)
+    Path(&quot;data/scanned-conduct.pdf&quot;).unlink(missing_ok=True)
+    print(&quot;deleted index&quot;, INDEX_NAME, &quot;and local files&quot;)
+
+
+# --- Main -------------------------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    index_client = SearchIndexClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], credential)
+    search_client = SearchClient(os.environ[&quot;SEARCH_ENDPOINT&quot;], INDEX_NAME, credential)
+
+    print(&quot;=== Creating the index ===&quot;)
+    index_client.create_or_update_index(SearchIndex(
+        name=INDEX_NAME,
+        fields=[
+            SimpleField(name=&quot;id&quot;, type=&quot;Edm.String&quot;, key=True),
+            SearchableField(name=&quot;content&quot;, type=&quot;Edm.String&quot;),
+            SimpleField(name=&quot;source&quot;, type=&quot;Edm.String&quot;),
+        ],
+    ))
+    print(&quot;index&quot;, INDEX_NAME, &quot;is ready&quot;)
+
+    run_the_whole_cycle(search_client)
+
+    scanned_path = make_a_scanned_pdf()
+    read_the_scan_with_ocr(scanned_path)
+
+    # Uncomment when you have finished the lab:
+    # clean_up(index_client)
+
+    print(&quot;\nDone.&quot;)
+</code></pre></details></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. You run sync twice with nothing changed. What should happen?</summary><ul><li>A. Everything re-uploads</li><li>B. Nothing is uploaded or deleted</li><li>C. An error</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>The fingerprints all match, so there is no work to do — and no embedding cost.</p></div></details>
+<details class="kc"><summary>2. A document is updated and now produces fewer chunks. Why must the old ids be deleted?</summary><ul><li>A. To save storage</li><li>B. Because orphaned chunks stay searchable and can be quoted</li><li>C. To reset the embedding model</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>A withdrawn passage still in the index will eventually be returned as evidence.</p></div></details>
+<details class="kc"><summary>3. Normal text extraction returns nothing from a PDF. What does that mean?</summary><ul><li>A. The file is corrupt</li><li>B. It is a scan — images with no embedded text</li><li>C. The page is blank</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>Which is why the code raises a clear error pointing you at OCR rather than indexing nothing.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You built change detection with a fingerprint manifest, watched a document get added, changed and removed with the index keeping up, proved that an unchanged run costs nothing, and read a scanned PDF with OCR.</p>
+<p>The ordering in <code>sync</code> — save the manifest only after Search accepts everything — is the detail that makes it safe to re-run after a crash.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Uncomment <code>clean_up(index_client)</code> and run once more. It deletes the index, the manifest and the scanned PDF.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/search/search-howto-reindex">Indexing and deletion</a></li><li><a href="https://learn.microsoft.com/azure/ai-services/document-intelligence/prebuilt/read">Document Intelligence read model</a></li></ul>
+<div class="pager"><a href="06-ground-an-agent.html">&#8592; Ground an agent</a><a href="08-agent-memory.html">Give the agent memory &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

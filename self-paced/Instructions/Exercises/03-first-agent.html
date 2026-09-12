@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Build your first agent, and give it tools | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-create-an-agent-twice">Task 2: Create an agent, twice</a></li><li><a href="#task-3-talk-to-it-by-name">Task 3: Talk to it by name</a></li><li><a href="#task-4-write-the-tools">Task 4: Write the tools</a></li><li><a href="#task-5-run-the-tool-loop">Task 5: Run the tool loop</a></li><li><a href="#task-6-tidy-up">Task 6: Tidy up</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Build your first agent, and give it tools</h1>
+<p>So far your instructions lived in a string in a Python file. An <strong>agent</strong> is that same idea, saved in your project with a name and a version number.</p>
+<p>Then comes the part that makes agents genuinely useful: <strong>tools</strong>. You give the model a list of things it is allowed to ask for, and when it asks, <em>your code</em> decides whether to do it. The model never runs anything itself — and understanding exactly where that line sits is the most important thing in this exercise.</p>
+<p>This exercise takes approximately <strong>90</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/03-first-agent</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: same packages as Exercise 01</div></div>
+<div class="tags"><span class="tag alt">Foundations</span><span class="tag">Module 3</span><span class="tag">Module 6</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Create a named agent and publish two versions of it.</li><li>See that an old version is still there, unchanged.</li><li>Call the agent without repeating the model or instructions.</li><li>Describe two Python functions to the model as tools.</li><li>Run the tool loop by hand, so you can see every step of it.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>Exercise 01 finished.</li><li>A project role that lets you create agents.</li></ul>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd labs/03-first-agent
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre></li>
+<li><p>Fill in <code>.env</code>. **Put your own initials in <code>YOUR_INITIALS</code>** so your agent does not collide with anyone else&#x27;s in a shared project:</p>
+<pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
+MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
+YOUR_INITIALS=xx
+</code></pre></li>
+<li><p>Open <code>data/orders.json</code> and look at one record. Twenty-five synthetic orders, each with an id, a customer, a status and a total. No real people.</p></li>
+<li><p>Create <code>my_agent.py</code> and start it:</p>
+<pre><code class="language-python">&quot;&quot;&quot;My first agent.&quot;&quot;&quot;
+
+import json
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import FunctionTool, PromptAgentDefinition
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+AGENT_NAME = &quot;acme-agent-&quot; + os.environ.get(&quot;YOUR_INITIALS&quot;, &quot;xx&quot;)
+</code></pre></li>
+</ol>
+<h2 id="task-2-create-an-agent-twice">Task 2: Create an agent, twice</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def create_two_versions(project):
+    &quot;&quot;&quot;Publish two versions of the same agent, with different instructions.&quot;&quot;&quot;
+    print(&quot;\n=== Creating agent versions ===&quot;)
+
+    first = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=&quot;You are a council assistant. Answer in Australian English.&quot;,
+        ),
+    )
+    print(&quot;created version&quot;, first.version)
+
+    second = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=(
+                &quot;You are a council assistant. Answer in Australian English, &quot;
+                &quot;in one short sentence.&quot;
+            ),
+        ),
+    )
+    print(&quot;created version&quot;, second.version)
+
+    print(&quot;\nStored versions of&quot;, AGENT_NAME + &quot;:&quot;)
+    for version in project.agents.list_versions(agent_name=AGENT_NAME):
+        print(&quot; - version&quot;, version.version)
+
+    # The first version still exists, unchanged. Versions never overwrite.
+    return second.version
+</code></pre></li>
+<li><p>Add a main block:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+
+    create_two_versions(project)
+</code></pre></li>
+<li><pre><code class="language-powershell">python my_agent.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Two version numbers created, then a list showing both.</p></blockquote></li>
+<li><p><strong>Run it again.</strong></p>
+<blockquote class="ok"><p><strong>Check</strong>: You now have four versions, not two. Versions accumulate — creating one never changes or replaces an old one.</p></blockquote>
+<blockquote><p><strong>Note</strong>: This matters more than it looks. In Exercise 11 you build a release gate that ties test evidence to a specific version. That is only meaningful if the thing you tested cannot quietly change afterwards.</p></blockquote></li>
+<li><details class="wholefile"><summary>Show the complete <code>my_agent.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 03 - Build your first agent.
+
+An agent is a name, a model, some instructions and (optionally) tools, stored
+in your project. This file creates one, gives it two versions, then gives it
+three tools and runs the tool loop by hand.
+
+Run it with:  python my_agent.py
+&quot;&quot;&quot;
+
+import json
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import FunctionTool, PromptAgentDefinition
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+
+# Put your initials here so your agent does not clash with anyone else&#x27;s.
+AGENT_NAME = &quot;acme-agent-&quot; + os.environ.get(&quot;YOUR_INITIALS&quot;, &quot;xx&quot;)
+
+
+# --- Task 2 -----------------------------------------------------------------
+def create_two_versions(project):
+    &quot;&quot;&quot;Publish two versions of the same agent, with different instructions.&quot;&quot;&quot;
+    print(&quot;\n=== Creating agent versions ===&quot;)
+
+    first = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=&quot;You are a council assistant. Answer in Australian English.&quot;,
+        ),
+    )
+    print(&quot;created version&quot;, first.version)
+
+    second = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=(
+                &quot;You are a council assistant. Answer in Australian English, &quot;
+                &quot;in one short sentence.&quot;
+            ),
+        ),
+    )
+    print(&quot;created version&quot;, second.version)
+
+    print(&quot;\nStored versions of&quot;, AGENT_NAME + &quot;:&quot;)
+    for version in project.agents.list_versions(agent_name=AGENT_NAME):
+        print(&quot; - version&quot;, version.version)
+
+    # The first version still exists, unchanged. Versions never overwrite.
+    return second.version
+
+
+# --- Main ---------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+
+    create_two_versions(project)
+</code></pre></details></li>
+</ol>
+<h2 id="task-3-talk-to-it-by-name">Task 3: Talk to it by name</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def ask_the_agent(project):
+    &quot;&quot;&quot;Call the agent by name. Notice we do not pass a model or instructions.&quot;&quot;&quot;
+    print(&quot;\n=== Asking the agent ===&quot;)
+
+    agent_client = project.get_openai_client(agent_name=AGENT_NAME)
+
+    response = agent_client.responses.create(
+        input=&quot;Why should an assistant use a tool instead of guessing?&quot;,
+    )
+
+    print(response.output_text)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">    ask_the_agent(project)
+</code></pre></li>
+<li><pre><code class="language-powershell">python my_agent.py
+</code></pre></li>
+<li><p>Look carefully at what is <strong>missing</strong> from that <code>responses.create(...)</code> call: there is no <code>model=</code> and no <code>instructions=</code>.</p>
+<blockquote><p><strong>Note</strong>: Both come from the saved agent. Compare it with Exercise 01, where you passed them on every single request. That is the difference between an agent and a plain model call.</p></blockquote></li>
+</ol>
+<h2 id="task-4-write-the-tools">Task 4: Write the tools</h2>
+<p>Two ordinary Python functions, and then a description of each one for the model.</p>
+<p>The description is all the model ever sees. It never receives your code.</p>
+<ol>
+<li><p>Add the functions and their descriptions:</p>
+<pre><code class="language-python">def load_orders():
+    with open(&quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        return json.load(file)
+
+
+def get_order_status(order_id):
+    &quot;&quot;&quot;Look up one order.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order
+    return {&quot;error&quot;: &quot;Order not found&quot;}
+
+
+def find_orders_for_customer(customer_name):
+    &quot;&quot;&quot;Find every order belonging to a customer.&quot;&quot;&quot;
+    matches = []
+    for order in load_orders():
+        if customer_name.lower() in order[&quot;customer_name&quot;].lower():
+            matches.append(order)
+    return matches
+
+
+# The model never sees the Python above. It only sees these descriptions.
+TOOL_SCHEMAS = [
+    FunctionTool(
+        name=&quot;get_order_status&quot;,
+        description=&quot;Get the status of one order by its order ID.&quot;,
+        strict=True,
+        parameters={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;order_id&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;order_id&quot;],
+            &quot;additionalProperties&quot;: False,
+        },
+    ),
+    FunctionTool(
+        name=&quot;find_orders_for_customer&quot;,
+        description=&quot;Find all orders belonging to a customer name.&quot;,
+        strict=True,
+        parameters={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;customer_name&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;customer_name&quot;],
+            &quot;additionalProperties&quot;: False,
+        },
+    ),
+]
+
+# Our own list of what we are willing to run. A name that is not in here is
+# never executed, no matter what the model asks for.
+AVAILABLE_TOOLS = {
+    &quot;get_order_status&quot;: get_order_status,
+    &quot;find_orders_for_customer&quot;: find_orders_for_customer,
+}
+</code></pre></li>
+<li><p>Three things in there are worth pausing on:</p>
+<ul><li><code>FunctionTool</code> describes the <strong>name, purpose and arguments</strong> — nothing else.</li><li><code>strict=True</code> with <code>additionalProperties: False</code> means the model must send exactly the arguments you declared, and nothing extra.</li><li><code>AVAILABLE_TOOLS</code> is <strong>your own list of what you are willing to run</strong>. If the model asks for something not in that dictionary, it simply does not happen.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: That last point is the security boundary of the whole exercise. Never dispatch a function by name straight from model output without checking it against a list you control.</p></blockquote></li>
+</ol>
+<h2 id="task-5-run-the-tool-loop">Task 5: Run the tool loop</h2>
+<ol>
+<li><p>Add these two functions:</p>
+<pre><code class="language-python">def add_tools_to_the_agent(project):
+    &quot;&quot;&quot;Publish a new version that has tools attached.&quot;&quot;&quot;
+    print(&quot;\n=== Adding tools ===&quot;)
+
+    version = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=(
+                &quot;You help staff with orders. Always use the tools for order &quot;
+                &quot;facts. Never guess an order status. Amounts are in AUD.&quot;
+            ),
+            tools=TOOL_SCHEMAS,
+        ),
+    )
+    print(&quot;created version&quot;, version.version, &quot;with&quot;, len(TOOL_SCHEMAS), &quot;tools&quot;)
+    return version.version
+
+
+def run_the_tool_loop(project, version):
+    &quot;&quot;&quot;Ask a question that needs tools, and answer the model&#x27;s tool requests.&quot;&quot;&quot;
+    print(&quot;\n=== Running the tool loop ===&quot;)
+
+    client = project.get_openai_client()
+    agent_reference = {
+        &quot;agent&quot;: {&quot;type&quot;: &quot;agent_reference&quot;, &quot;name&quot;: AGENT_NAME, &quot;version&quot;: version}
+    }
+
+    first_order = load_orders()[0]
+    question = (
+        f&quot;What orders does {first_order[&#x27;customer_name&#x27;]} have, &quot;
+        f&quot;and what is the status of {first_order[&#x27;order_id&#x27;]}?&quot;
+    )
+    print(&quot;Question:&quot;, question, &quot;\n&quot;)
+
+    response = client.responses.create(input=question, extra_body=agent_reference)
+
+    # Keep going until the model stops asking for tools.
+    while True:
+        tool_calls = [item for item in response.output if item.type == &quot;function_call&quot;]
+        if not tool_calls:
+            break
+
+        tool_results = []
+        for call in tool_calls:
+            function = AVAILABLE_TOOLS[call.name]
+            arguments = json.loads(call.arguments)
+
+            print(f&quot;  model asked for: {call.name}({arguments})&quot;)
+            result = function(**arguments)
+
+            tool_results.append({
+                &quot;type&quot;: &quot;function_call_output&quot;,
+                &quot;call_id&quot;: call.call_id,       # this is what links result to request
+                &quot;output&quot;: json.dumps(result),
+            })
+
+        response = client.responses.create(
+            input=tool_results,
+            previous_response_id=response.id,
+            extra_body=agent_reference,
+        )
+
+    print(&quot;\nAnswer:&quot;, response.output_text)
+</code></pre></li>
+<li><p>Update your main block to call them:</p>
+<pre><code class="language-python">    version_with_tools = add_tools_to_the_agent(project)
+    run_the_tool_loop(project, version_with_tools)
+</code></pre></li>
+<li><pre><code class="language-powershell">python my_agent.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: You should see <code>model asked for: find_orders_for_customer({...})</code> and then <code>get_order_status({...})</code>, followed by an answer built from the real data.</p></blockquote></li>
+<li><p>Follow what just happened, because this loop is the heart of every agent:</p>
+<ul><li>You asked a question. The model replied — not with an answer, but with a <strong>request</strong>: <em>please run this function with these arguments</em>.</li><li>Your code looked the name up in <code>AVAILABLE_TOOLS</code> and ran the real Python.</li><li>You sent the result back, tagged with <code>call_id</code>.</li><li>The model used it, and possibly asked for another tool. The loop repeats until it stops asking.</li></ul>
+<blockquote><p><strong>Note</strong>: <code>call_id</code> is what ties a result to the request that asked for it. When the model asks for three tools at once, nothing else is reliable — not the order, not the function name.</p></blockquote></li>
+<li><p><strong>Try breaking it, deliberately.</strong> Change the question to ask about order <code>ORD-99999</code>, which does not exist, and run again.</p>
+<blockquote class="ok"><p><strong>Check</strong>: The function returns <code>{&#x27;error&#x27;: &#x27;Order not found&#x27;}</code> and a good model tells you it cannot find that order. A model that invents a status here would invent one in production too.</p></blockquote></li>
+<li><p><strong>Now break it the other way.</strong> Delete <code>find_orders_for_customer</code> from the <code>AVAILABLE_TOOLS</code> dictionary — but leave its description in <code>TOOL_SCHEMAS</code> — and run again.</p>
+<blockquote class="ok"><p><strong>Check</strong>: You get a <code>KeyError</code>. The model asked for a tool you were not prepared to run.</p></blockquote>
+<p>Put it back.</p>
+<blockquote><p><strong>Note</strong>: In a real service that is a case you handle deliberately rather than crash on. Exercise 09 handles exactly this, by returning HTTP 403.</p></blockquote></li>
+<li><p>The finished file:</p>
+<details class="wholefile"><summary>Show the complete <code>my_agent.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 03 - Build your first agent.
+
+An agent is a name, a model, some instructions and (optionally) tools, stored
+in your project. This file creates one, gives it two versions, then gives it
+three tools and runs the tool loop by hand.
+
+Run it with:  python my_agent.py
+&quot;&quot;&quot;
+
+import json
+import os
+
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import FunctionTool, PromptAgentDefinition
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MODEL = os.environ[&quot;MODEL_DEPLOYMENT&quot;]
+
+# Put your initials here so your agent does not clash with anyone else&#x27;s.
+AGENT_NAME = &quot;acme-agent-&quot; + os.environ.get(&quot;YOUR_INITIALS&quot;, &quot;xx&quot;)
+
+
+# --- Task 2 -----------------------------------------------------------------
+def create_two_versions(project):
+    &quot;&quot;&quot;Publish two versions of the same agent, with different instructions.&quot;&quot;&quot;
+    print(&quot;\n=== Creating agent versions ===&quot;)
+
+    first = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=&quot;You are a council assistant. Answer in Australian English.&quot;,
+        ),
+    )
+    print(&quot;created version&quot;, first.version)
+
+    second = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=(
+                &quot;You are a council assistant. Answer in Australian English, &quot;
+                &quot;in one short sentence.&quot;
+            ),
+        ),
+    )
+    print(&quot;created version&quot;, second.version)
+
+    print(&quot;\nStored versions of&quot;, AGENT_NAME + &quot;:&quot;)
+    for version in project.agents.list_versions(agent_name=AGENT_NAME):
+        print(&quot; - version&quot;, version.version)
+
+    # The first version still exists, unchanged. Versions never overwrite.
+    return second.version
+
+
+# --- Task 3 -----------------------------------------------------------------
+def ask_the_agent(project):
+    &quot;&quot;&quot;Call the agent by name. Notice we do not pass a model or instructions.&quot;&quot;&quot;
+    print(&quot;\n=== Asking the agent ===&quot;)
+
+    agent_client = project.get_openai_client(agent_name=AGENT_NAME)
+
+    response = agent_client.responses.create(
+        input=&quot;Why should an assistant use a tool instead of guessing?&quot;,
+    )
+
+    print(response.output_text)
+
+
+# --- Task 4: the three tools ------------------------------------------------
+def load_orders():
+    with open(&quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+        return json.load(file)
+
+
+def get_order_status(order_id):
+    &quot;&quot;&quot;Look up one order.&quot;&quot;&quot;
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == order_id:
+            return order
+    return {&quot;error&quot;: &quot;Order not found&quot;}
+
+
+def find_orders_for_customer(customer_name):
+    &quot;&quot;&quot;Find every order belonging to a customer.&quot;&quot;&quot;
+    matches = []
+    for order in load_orders():
+        if customer_name.lower() in order[&quot;customer_name&quot;].lower():
+            matches.append(order)
+    return matches
+
+
+# The model never sees the Python above. It only sees these descriptions.
+TOOL_SCHEMAS = [
+    FunctionTool(
+        name=&quot;get_order_status&quot;,
+        description=&quot;Get the status of one order by its order ID.&quot;,
+        strict=True,
+        parameters={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;order_id&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;order_id&quot;],
+            &quot;additionalProperties&quot;: False,
+        },
+    ),
+    FunctionTool(
+        name=&quot;find_orders_for_customer&quot;,
+        description=&quot;Find all orders belonging to a customer name.&quot;,
+        strict=True,
+        parameters={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;customer_name&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;customer_name&quot;],
+            &quot;additionalProperties&quot;: False,
+        },
+    ),
+]
+
+# Our own list of what we are willing to run. A name that is not in here is
+# never executed, no matter what the model asks for.
+AVAILABLE_TOOLS = {
+    &quot;get_order_status&quot;: get_order_status,
+    &quot;find_orders_for_customer&quot;: find_orders_for_customer,
+}
+
+
+# --- Task 5 -----------------------------------------------------------------
+def add_tools_to_the_agent(project):
+    &quot;&quot;&quot;Publish a new version that has tools attached.&quot;&quot;&quot;
+    print(&quot;\n=== Adding tools ===&quot;)
+
+    version = project.agents.create_version(
+        agent_name=AGENT_NAME,
+        definition=PromptAgentDefinition(
+            model=MODEL,
+            instructions=(
+                &quot;You help staff with orders. Always use the tools for order &quot;
+                &quot;facts. Never guess an order status. Amounts are in AUD.&quot;
+            ),
+            tools=TOOL_SCHEMAS,
+        ),
+    )
+    print(&quot;created version&quot;, version.version, &quot;with&quot;, len(TOOL_SCHEMAS), &quot;tools&quot;)
+    return version.version
+
+
+def run_the_tool_loop(project, version):
+    &quot;&quot;&quot;Ask a question that needs tools, and answer the model&#x27;s tool requests.&quot;&quot;&quot;
+    print(&quot;\n=== Running the tool loop ===&quot;)
+
+    client = project.get_openai_client()
+    agent_reference = {
+        &quot;agent&quot;: {&quot;type&quot;: &quot;agent_reference&quot;, &quot;name&quot;: AGENT_NAME, &quot;version&quot;: version}
+    }
+
+    first_order = load_orders()[0]
+    question = (
+        f&quot;What orders does {first_order[&#x27;customer_name&#x27;]} have, &quot;
+        f&quot;and what is the status of {first_order[&#x27;order_id&#x27;]}?&quot;
+    )
+    print(&quot;Question:&quot;, question, &quot;\n&quot;)
+
+    response = client.responses.create(input=question, extra_body=agent_reference)
+
+    # Keep going until the model stops asking for tools.
+    while True:
+        tool_calls = [item for item in response.output if item.type == &quot;function_call&quot;]
+        if not tool_calls:
+            break
+
+        tool_results = []
+        for call in tool_calls:
+            function = AVAILABLE_TOOLS[call.name]
+            arguments = json.loads(call.arguments)
+
+            print(f&quot;  model asked for: {call.name}({arguments})&quot;)
+            result = function(**arguments)
+
+            tool_results.append({
+                &quot;type&quot;: &quot;function_call_output&quot;,
+                &quot;call_id&quot;: call.call_id,       # this is what links result to request
+                &quot;output&quot;: json.dumps(result),
+            })
+
+        response = client.responses.create(
+            input=tool_results,
+            previous_response_id=response.id,
+            extra_body=agent_reference,
+        )
+
+    print(&quot;\nAnswer:&quot;, response.output_text)
+
+
+# --- Task 6 -----------------------------------------------------------------
+def delete_the_agent(project):
+    &quot;&quot;&quot;Tidy up. Only ever deletes the agent this lab created.&quot;&quot;&quot;
+    print(&quot;\n=== Cleaning up ===&quot;)
+    if not AGENT_NAME.startswith(&quot;acme-agent-&quot;):
+        raise ValueError(&quot;Refusing to delete anything that is not this lab&#x27;s agent&quot;)
+    project.agents.delete(agent_name=AGENT_NAME)
+    print(&quot;deleted&quot;, AGENT_NAME)
+
+
+# --- Main -------------------------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    project = AIProjectClient(
+        endpoint=os.environ[&quot;PROJECT_ENDPOINT&quot;],
+        credential=DefaultAzureCredential(),
+    )
+
+    create_two_versions(project)
+    ask_the_agent(project)
+    version_with_tools = add_tools_to_the_agent(project)
+    run_the_tool_loop(project, version_with_tools)
+
+    # Uncomment when you have finished the lab:
+    # delete_the_agent(project)
+
+    print(&quot;\nDone.&quot;)
+</code></pre></details></li>
+</ol>
+<h2 id="task-6-tidy-up">Task 6: Tidy up</h2>
+<ol>
+<li><p>You created a real agent in the project. Remove it by uncommenting the last line in the main block:</p>
+<pre><code class="language-python">    delete_the_agent(project)
+</code></pre></li>
+<li><pre><code class="language-powershell">python my_agent.py
+</code></pre>
+<blockquote><p><strong>Tip</strong>: All those versions live under one agent name, so deleting the agent removes all of them in one go. The function refuses to delete anything whose name does not start with <code>acme-agent-</code>.</p></blockquote></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Who actually executes a tool function?</summary><ul><li>A. The model</li><li>B. Your application</li><li>C. The Foundry service</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>The model only sends a request. Your code checks it against <code>AVAILABLE_TOOLS</code> and decides.</p></div></details>
+<details class="kc"><summary>2. What does the model receive about a tool?</summary><ul><li>A. The Python source</li><li>B. Its name, description and argument schema</li><li>C. Read access to your files</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>It sees the <code>FunctionTool</code> description and nothing more.</p></div></details>
+<details class="kc"><summary>3. You change an agent&#x27;s instructions. What happens to the old version?</summary><ul><li>A. It is overwritten</li><li>B. It is deleted</li><li>C. It stays exactly as it was</li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>You saw four versions after running twice. Immutability is what makes evaluation evidence and rollback mean anything.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You created a named agent, published versions that accumulate rather than overwrite, called it without repeating the model or instructions, and ran the full tool loop by hand.</p>
+<p>The line you drew in Task 5 — model proposes, your application decides and executes — is the same line enforced with HTTP status codes in Exercise 09 and with a verified user identity in Exercise 13.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Run the file with <code>delete_the_agent(project)</code> uncommented, as in Task 6. It removes only the agent whose name starts with <code>acme-agent-</code>.</p>
+<blockquote><p><strong>Tip</strong>: If you skip this, you leave a named agent in a shared project. It costs nothing, but the next class will thank you.</p></blockquote>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/foundry/agents/quickstarts/prompt-agent">Prompt agents</a></li><li><a href="https://learn.microsoft.com/azure/foundry/agents/how-to/tools/function-calling">Function calling</a></li></ul>
+<div class="pager"><a href="02-choose-a-model.html">&#8592; Choose a model</a><a href="04-prepare-documents.html">Prepare documents &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

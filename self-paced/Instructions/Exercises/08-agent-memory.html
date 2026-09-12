@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Give the agent memory that survives a restart | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-who-is-asking">Task 2: Who is asking?</a></li><li><a href="#task-3-save-and-recover">Task 3: Save and recover</a></li><li><a href="#task-4-turn-memory-back-into-a-prompt">Task 4: Turn memory back into a prompt</a></li><li><a href="#task-5-watch-something-expire">Task 5: Watch something expire</a></li><li><a href="#task-6-what-a-partition-key-does-not-do">Task 6: What a partition key does not do</a></li><li><a href="#task-7-cosmos-or-search">Task 7: Cosmos or Search?</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Give the agent memory that survives a restart</h1>
+<p>In Exercise 01 a conversation object remembered a case reference. That was convenient, but it does not answer the real question: <strong>where does that live, who can read it, and how long does it last?</strong></p>
+<p>Those are the questions a public-sector reviewer will ask about resident conversations, so this exercise answers them with a real database.</p>
+<p>This exercise takes approximately <strong>90</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/08-agent-memory</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>azure-cosmos</code> — a different package set from the other exercises</div></div>
+<div class="tags"><span class="tag alt">Platform</span><span class="tag">Module 5</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Work out who is signed in from the token, not from the request.</li><li>Store a conversation and recover it in a separate process.</li><li>Give short-term and long-term memory different lifetimes with TTL.</li><li>Turn stored state back into a prompt — the step that is easy to forget.</li><li>Explain why a partition key is not access control.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>A <strong>Cosmos DB for NoSQL</strong> account with a database <code>workshop-memory</code> and a container <code>sessions</code>, partitioned on <code>/userId</code> with TTL enabled. Your instructor creates this.</li><li><strong>Cosmos DB Built-in Data Contributor</strong> on that database.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: Subscription Contributor is a <em>management</em> role and does <strong>not</strong> give you data access. If reads fail with a 403 despite being an owner, this is why.</p></blockquote>
+<blockquote><p><strong>Tip</strong>: Instructor setup, run once:</p></blockquote>
+<pre><code class="language-powershell">$rg = &#x27;YOUR-RESOURCE-GROUP&#x27;
+$account = &#x27;YOUR-COSMOS-ACCOUNT&#x27;
+az cosmosdb sql database create -g $rg -a $account -n workshop-memory
+az cosmosdb sql container create -g $rg -a $account -d workshop-memory `
+  -n sessions --partition-key-path /userId --ttl -1
+</code></pre>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd labs/08-agent-memory
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre></li>
+<li><pre><code class="language-text">COSMOS_ENDPOINT=https://YOUR-ACCOUNT.documents.azure.com:443/
+</code></pre></li>
+<li><p>Create <code>agent_memory.py</code>:</p>
+<pre><code class="language-python">&quot;&quot;&quot;Give the agent memory.&quot;&quot;&quot;
+
+import base64
+import json
+import os
+import time
+
+from azure.cosmos import CosmosClient
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_NAME = &quot;workshop-memory&quot;
+CONTAINER_NAME = &quot;sessions&quot;
+
+ONE_HOUR = 3600
+ONE_DAY = 86400
+</code></pre></li>
+</ol>
+<h2 id="task-2-who-is-asking">Task 2: Who is asking?</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def who_am_i(credential):
+    &quot;&quot;&quot;Work out who is signed in, from the token itself.
+
+    We ask Azure Identity for a token and read the claims out of it. The
+    important part is where this value comes FROM: the identity service, not
+    from anything a caller typed.
+
+    In a web app you would validate an incoming token properly first
+    (Lab 13 does exactly that) and use the verified claims. Never take a
+    user id from a request body.
+    &quot;&quot;&quot;
+    token = credential.get_token(&quot;https://cosmos.azure.com/.default&quot;).token
+
+    # A JWT is three base64 parts separated by dots. The middle one is the claims.
+    claims_part = token.split(&quot;.&quot;)[1]
+    padding = &quot;=&quot; * (-len(claims_part) % 4)
+    claims = json.loads(base64.urlsafe_b64decode(claims_part + padding))
+
+    tenant_id = claims[&quot;tid&quot;]
+    object_id = claims[&quot;oid&quot;]
+    return f&quot;{tenant_id}:{object_id}&quot;
+</code></pre></li>
+<li><p>Add a main block:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+    cosmos = CosmosClient(os.environ[&quot;COSMOS_ENDPOINT&quot;], credential=credential)
+    container = (cosmos
+                 .get_database_client(DATABASE_NAME)
+                 .get_container_client(CONTAINER_NAME))
+
+    user_id = who_am_i(credential)
+    print(&quot;Signed in as:&quot;, user_id)
+</code></pre></li>
+<li><pre><code class="language-powershell">python agent_memory.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: A <code>tenant-id:object-id</code> string. That is you.</p></blockquote></li>
+<li><p>The important thing here is <strong>where that value came from</strong>: a token the SDK just fetched from Entra. Not from a request body, not from a form field.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Read the docstring in that function. It decodes a token the credential just obtained, which is safe. It is <strong>not</strong> a validator for tokens arriving from the outside — for that you must check the signature, issuer, audience and expiry, which is what Exercise 13 does properly.</p></blockquote></li>
+</ol>
+<h2 id="task-3-save-and-recover">Task 3: Save and recover</h2>
+<ol>
+<li><p>Add these two functions:</p>
+<pre><code class="language-python">def save_a_conversation(container, user_id):
+    &quot;&quot;&quot;Write a conversation and a preference, with different lifetimes.&quot;&quot;&quot;
+    print(&quot;\n=== Saving ===&quot;)
+
+    # Short-term: this conversation. Gone in an hour.
+    container.upsert_item({
+        &quot;id&quot;: &quot;conversation-1&quot;,
+        &quot;userId&quot;: user_id,             # this is the partition key
+        &quot;ttl&quot;: ONE_HOUR,
+        &quot;messages&quot;: [
+            {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;My case reference is ACME-204.&quot;},
+            {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: &quot;Noted, ACME-204.&quot;},
+        ],
+    })
+    print(f&quot;  saved conversation-1  (expires in {ONE_HOUR}s)&quot;)
+
+    # Long-term: how this person likes to be answered. Survives the day.
+    container.upsert_item({
+        &quot;id&quot;: &quot;preferences&quot;,
+        &quot;userId&quot;: user_id,
+        &quot;ttl&quot;: ONE_DAY,
+        &quot;language&quot;: &quot;Australian English&quot;,
+        &quot;style&quot;: &quot;short answers&quot;,
+    })
+    print(f&quot;  saved preferences     (expires in {ONE_DAY}s)&quot;)
+
+    print(&quot;\nSame container, different lifetimes. That is the difference&quot;)
+    print(&quot;between short-term and long-term memory in practice.&quot;)
+
+
+def read_it_back(container, user_id):
+    &quot;&quot;&quot;Read the saved state. A point read needs the id AND the partition key.&quot;&quot;&quot;
+    print(&quot;\n=== Reading back ===&quot;)
+
+    conversation = container.read_item(item=&quot;conversation-1&quot;, partition_key=user_id)
+    preferences = container.read_item(item=&quot;preferences&quot;, partition_key=user_id)
+
+    print(&quot;  conversation:&quot;, conversation[&quot;messages&quot;][0][&quot;content&quot;])
+    print(&quot;  style:       &quot;, preferences[&quot;style&quot;])
+    return conversation, preferences
+</code></pre></li>
+<li><p>Call them:</p>
+<pre><code class="language-python">    save_a_conversation(container, user_id)
+    conversation, preferences = read_it_back(container, user_id)
+</code></pre></li>
+<li><pre><code class="language-powershell">python agent_memory.py
+</code></pre></li>
+<li><p>Two items, same container, <strong>different lifetimes</strong>. That is the whole short-term versus long-term distinction, made concrete:</p>
+<table><thead><tr><th>Item</th><th>TTL</th><th>What it is</th></tr></thead><tbody><tr><td><code>conversation-1</code></td><td>1 hour</td><td>Short-term: this conversation</td></tr><tr><td><code>preferences</code></td><td>1 day</td><td>Long-term: how this person likes to be answered</td></tr></tbody></table></li>
+<li><p><strong>Prove it really survives a restart.</strong> The script already exits between runs, but make it obvious: comment out the call to <code>save_a_conversation</code>, leaving only <code>read_it_back</code>, and run again.</p>
+<blockquote class="ok"><p><strong>Check</strong>: The data is still there. It came from Cosmos, not from anything held in memory. Put the save call back afterwards.</p></blockquote></li>
+<li><p>Open the items in <strong>Data Explorer</strong> in the portal. Look at <code>_ts</code> and <code>ttl</code>.</p>
+<blockquote><p><strong>Tip</strong>: While you are there, run a query and look at the <strong>request charge</strong> in Query Stats. Compare a point read (which needs the id <em>and</em> the partition key) with a query. That difference is the Cosmos cost model in one screen.</p></blockquote></li>
+</ol>
+<h2 id="task-4-turn-memory-back-into-a-prompt">Task 4: Turn memory back into a prompt</h2>
+<p>Here is the step people skip. Saving to a database changes nothing by itself.</p>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def use_the_memory_in_a_prompt(conversation, preferences):
+    &quot;&quot;&quot;Storage does not give the model memory. Your code does.
+
+    This is the step people skip. Saving to a database changes nothing until
+    the application chooses what to put back into the next request.
+    &quot;&quot;&quot;
+    print(&quot;\n=== Turning stored state into a prompt ===&quot;)
+
+    history = &quot;&quot;
+    for message in conversation[&quot;messages&quot;]:
+        history += f&quot;{message[&#x27;role&#x27;]}: {message[&#x27;content&#x27;]}\n&quot;
+
+    instructions = (
+        f&quot;Answer in {preferences[&#x27;language&#x27;]} using {preferences[&#x27;style&#x27;]}.\n&quot;
+        f&quot;Here is the conversation so far:\n{history}&quot;
+    )
+
+    print(instructions)
+    print(&quot;This text is what you would pass as `instructions` to the model.&quot;)
+    print(&quot;Nothing is automatic - the database stores, the application remembers.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">    use_the_memory_in_a_prompt(conversation, preferences)
+</code></pre></li>
+<li><pre><code class="language-powershell">python agent_memory.py
+</code></pre></li>
+<li><p>That printed text is what you would pass as <code>instructions</code> on the next model call.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: <strong>Storage does not give a model memory.</strong> The database stores; your application decides what to put back into the next request. If you save a conversation and never read it into a prompt, the assistant will remember nothing at all — and the bug will look like a model problem when it is an application problem.</p></blockquote></li>
+</ol>
+<h2 id="task-5-watch-something-expire">Task 5: Watch something expire</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def watch_something_expire(container, user_id):
+    &quot;&quot;&quot;Save an item that lives for 15 seconds, then watch it disappear.&quot;&quot;&quot;
+    print(&quot;\n=== Watching a short-lived item expire ===&quot;)
+
+    container.upsert_item({
+        &quot;id&quot;: &quot;temporary-note&quot;,
+        &quot;userId&quot;: user_id,
+        &quot;ttl&quot;: 15,
+        &quot;note&quot;: &quot;This will not exist for long.&quot;,
+    })
+    print(&quot;  saved temporary-note with ttl=15&quot;)
+
+    item = container.read_item(item=&quot;temporary-note&quot;, partition_key=user_id)
+    print(&quot;  reading it now:&quot;, item[&quot;note&quot;])
+
+    print(&quot;  waiting 20 seconds ...&quot;)
+    time.sleep(20)
+
+    try:
+        container.read_item(item=&quot;temporary-note&quot;, partition_key=user_id)
+        print(&quot;  still there - Cosmos removes expired items lazily, try again&quot;)
+    except Exception as error:
+        print(f&quot;  gone: {type(error).__name__}&quot;)
+        print(&quot;\nNo try/except hiding it in your own code either - an expired&quot;)
+        print(&quot;session SHOULD be a visible &#x27;not found&#x27;, not a silent empty answer.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">    watch_something_expire(container, user_id)
+</code></pre></li>
+<li><pre><code class="language-powershell">python agent_memory.py
+</code></pre>
+<p>This one waits 20 seconds. Let it.</p>
+<blockquote class="ok"><p><strong>Check</strong>: The item is readable, then gone.</p></blockquote>
+<blockquote><p><strong>Tip</strong>: Cosmos removes expired items lazily, so occasionally it is still there on the first check. Run it again if so.</p></blockquote></li>
+<li><p>Notice there is no <code>try/except</code> hiding this in the main flow.</p>
+<blockquote><p><strong>Note</strong>: An expired session <strong>should</strong> be a visible &quot;not found&quot;, not a silent empty answer. Swallowing it gives you an assistant that quietly forgets people and no way to tell why.</p></blockquote></li>
+</ol>
+<h2 id="task-6-what-a-partition-key-does-not-do">Task 6: What a partition key does not do</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def why_a_partition_key_is_not_a_password(container, user_id):
+    &quot;&quot;&quot;A partition key routes data. It does not stop anyone reading it.&quot;&quot;&quot;
+    print(&quot;\n=== An important limitation ===&quot;)
+
+    everything = list(container.query_items(
+        query=&quot;SELECT c.id, c.userId FROM c&quot;,
+        enable_cross_partition_query=True,
+    ))
+
+    print(f&quot;  a cross-partition query returned {len(everything)} items&quot;)
+    for item in everything:
+        print(f&quot;    {item[&#x27;id&#x27;]} belongs to {item[&#x27;userId&#x27;][:20]}...&quot;)
+
+    print(&quot;\n  Our credential can read every partition, including other users&#x27;.&quot;)
+    print(&quot;  Partition keys make lookups fast and cheap. They are NOT access&quot;)
+    print(&quot;  control. The trusted application decides which partition to read.&quot;)
+    print(&quot;  Never give an end user this database role or these credentials.&quot;)
+</code></pre></li>
+<li><p>Call it:</p>
+<pre><code class="language-python">    why_a_partition_key_is_not_a_password(container, user_id)
+</code></pre></li>
+<li><pre><code class="language-powershell">python agent_memory.py
+</code></pre></li>
+<li><p>Your credential just read across every partition, including other people&#x27;s.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: <strong>A partition key routes data. It does not restrict access.</strong> Anyone holding this database role can query any partition. The isolation in this exercise comes from your application choosing the right partition — not from the database refusing.</p></blockquote>
+<ul><li>The <strong>application</strong> holds the data role.</li><li>The <strong>user</strong> authenticates to the application.</li><li>End users must never be given this database role or these credentials.</li></ul></li>
+<li><p>The finished file:</p>
+<details class="wholefile"><summary>Show the complete <code>agent_memory.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 08 - Give the agent memory.
+
+A model remembers nothing. Anything it &quot;knows&quot; about an earlier turn is
+something your application handed it. This lab shows where that information
+lives and how long it lasts.
+
+Run it with:  python agent_memory.py
+&quot;&quot;&quot;
+
+import base64
+import json
+import os
+import time
+
+from azure.cosmos import CosmosClient
+from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_NAME = &quot;workshop-memory&quot;
+CONTAINER_NAME = &quot;sessions&quot;
+
+ONE_HOUR = 3600
+ONE_DAY = 86400
+
+
+# --- Task 2 -----------------------------------------------------------------
+def who_am_i(credential):
+    &quot;&quot;&quot;Work out who is signed in, from the token itself.
+
+    We ask Azure Identity for a token and read the claims out of it. The
+    important part is where this value comes FROM: the identity service, not
+    from anything a caller typed.
+
+    In a web app you would validate an incoming token properly first
+    (Lab 13 does exactly that) and use the verified claims. Never take a
+    user id from a request body.
+    &quot;&quot;&quot;
+    token = credential.get_token(&quot;https://cosmos.azure.com/.default&quot;).token
+
+    # A JWT is three base64 parts separated by dots. The middle one is the claims.
+    claims_part = token.split(&quot;.&quot;)[1]
+    padding = &quot;=&quot; * (-len(claims_part) % 4)
+    claims = json.loads(base64.urlsafe_b64decode(claims_part + padding))
+
+    tenant_id = claims[&quot;tid&quot;]
+    object_id = claims[&quot;oid&quot;]
+    return f&quot;{tenant_id}:{object_id}&quot;
+
+
+# --- Task 3 -----------------------------------------------------------------
+def save_a_conversation(container, user_id):
+    &quot;&quot;&quot;Write a conversation and a preference, with different lifetimes.&quot;&quot;&quot;
+    print(&quot;\n=== Saving ===&quot;)
+
+    # Short-term: this conversation. Gone in an hour.
+    container.upsert_item({
+        &quot;id&quot;: &quot;conversation-1&quot;,
+        &quot;userId&quot;: user_id,             # this is the partition key
+        &quot;ttl&quot;: ONE_HOUR,
+        &quot;messages&quot;: [
+            {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;My case reference is ACME-204.&quot;},
+            {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: &quot;Noted, ACME-204.&quot;},
+        ],
+    })
+    print(f&quot;  saved conversation-1  (expires in {ONE_HOUR}s)&quot;)
+
+    # Long-term: how this person likes to be answered. Survives the day.
+    container.upsert_item({
+        &quot;id&quot;: &quot;preferences&quot;,
+        &quot;userId&quot;: user_id,
+        &quot;ttl&quot;: ONE_DAY,
+        &quot;language&quot;: &quot;Australian English&quot;,
+        &quot;style&quot;: &quot;short answers&quot;,
+    })
+    print(f&quot;  saved preferences     (expires in {ONE_DAY}s)&quot;)
+
+    print(&quot;\nSame container, different lifetimes. That is the difference&quot;)
+    print(&quot;between short-term and long-term memory in practice.&quot;)
+
+
+def read_it_back(container, user_id):
+    &quot;&quot;&quot;Read the saved state. A point read needs the id AND the partition key.&quot;&quot;&quot;
+    print(&quot;\n=== Reading back ===&quot;)
+
+    conversation = container.read_item(item=&quot;conversation-1&quot;, partition_key=user_id)
+    preferences = container.read_item(item=&quot;preferences&quot;, partition_key=user_id)
+
+    print(&quot;  conversation:&quot;, conversation[&quot;messages&quot;][0][&quot;content&quot;])
+    print(&quot;  style:       &quot;, preferences[&quot;style&quot;])
+    return conversation, preferences
+
+
+# --- Task 4 -----------------------------------------------------------------
+def use_the_memory_in_a_prompt(conversation, preferences):
+    &quot;&quot;&quot;Storage does not give the model memory. Your code does.
+
+    This is the step people skip. Saving to a database changes nothing until
+    the application chooses what to put back into the next request.
+    &quot;&quot;&quot;
+    print(&quot;\n=== Turning stored state into a prompt ===&quot;)
+
+    history = &quot;&quot;
+    for message in conversation[&quot;messages&quot;]:
+        history += f&quot;{message[&#x27;role&#x27;]}: {message[&#x27;content&#x27;]}\n&quot;
+
+    instructions = (
+        f&quot;Answer in {preferences[&#x27;language&#x27;]} using {preferences[&#x27;style&#x27;]}.\n&quot;
+        f&quot;Here is the conversation so far:\n{history}&quot;
+    )
+
+    print(instructions)
+    print(&quot;This text is what you would pass as `instructions` to the model.&quot;)
+    print(&quot;Nothing is automatic - the database stores, the application remembers.&quot;)
+
+
+# --- Task 5 -----------------------------------------------------------------
+def watch_something_expire(container, user_id):
+    &quot;&quot;&quot;Save an item that lives for 15 seconds, then watch it disappear.&quot;&quot;&quot;
+    print(&quot;\n=== Watching a short-lived item expire ===&quot;)
+
+    container.upsert_item({
+        &quot;id&quot;: &quot;temporary-note&quot;,
+        &quot;userId&quot;: user_id,
+        &quot;ttl&quot;: 15,
+        &quot;note&quot;: &quot;This will not exist for long.&quot;,
+    })
+    print(&quot;  saved temporary-note with ttl=15&quot;)
+
+    item = container.read_item(item=&quot;temporary-note&quot;, partition_key=user_id)
+    print(&quot;  reading it now:&quot;, item[&quot;note&quot;])
+
+    print(&quot;  waiting 20 seconds ...&quot;)
+    time.sleep(20)
+
+    try:
+        container.read_item(item=&quot;temporary-note&quot;, partition_key=user_id)
+        print(&quot;  still there - Cosmos removes expired items lazily, try again&quot;)
+    except Exception as error:
+        print(f&quot;  gone: {type(error).__name__}&quot;)
+        print(&quot;\nNo try/except hiding it in your own code either - an expired&quot;)
+        print(&quot;session SHOULD be a visible &#x27;not found&#x27;, not a silent empty answer.&quot;)
+
+
+# --- Task 6 -----------------------------------------------------------------
+def why_a_partition_key_is_not_a_password(container, user_id):
+    &quot;&quot;&quot;A partition key routes data. It does not stop anyone reading it.&quot;&quot;&quot;
+    print(&quot;\n=== An important limitation ===&quot;)
+
+    everything = list(container.query_items(
+        query=&quot;SELECT c.id, c.userId FROM c&quot;,
+        enable_cross_partition_query=True,
+    ))
+
+    print(f&quot;  a cross-partition query returned {len(everything)} items&quot;)
+    for item in everything:
+        print(f&quot;    {item[&#x27;id&#x27;]} belongs to {item[&#x27;userId&#x27;][:20]}...&quot;)
+
+    print(&quot;\n  Our credential can read every partition, including other users&#x27;.&quot;)
+    print(&quot;  Partition keys make lookups fast and cheap. They are NOT access&quot;)
+    print(&quot;  control. The trusted application decides which partition to read.&quot;)
+    print(&quot;  Never give an end user this database role or these credentials.&quot;)
+
+
+# --- Task 7 -----------------------------------------------------------------
+def clean_up(container, user_id):
+    print(&quot;\n=== Cleaning up ===&quot;)
+    for item_id in [&quot;conversation-1&quot;, &quot;preferences&quot;, &quot;temporary-note&quot;]:
+        try:
+            container.delete_item(item=item_id, partition_key=user_id)
+            print(&quot;  deleted&quot;, item_id)
+        except Exception:
+            print(&quot;  &quot;, item_id, &quot;was already gone&quot;)
+
+
+# --- Main -------------------------------------------------------------------
+if __name__ == &quot;__main__&quot;:
+    credential = DefaultAzureCredential()
+
+    cosmos = CosmosClient(os.environ[&quot;COSMOS_ENDPOINT&quot;], credential=credential)
+    container = (cosmos
+                 .get_database_client(DATABASE_NAME)
+                 .get_container_client(CONTAINER_NAME))
+
+    user_id = who_am_i(credential)
+    print(&quot;Signed in as:&quot;, user_id)
+
+    save_a_conversation(container, user_id)
+    conversation, preferences = read_it_back(container, user_id)
+    use_the_memory_in_a_prompt(conversation, preferences)
+    watch_something_expire(container, user_id)
+    why_a_partition_key_is_not_a_password(container, user_id)
+
+    clean_up(container, user_id)
+
+    print(&quot;\nDone.&quot;)
+</code></pre></details></li>
+</ol>
+<h2 id="task-7-cosmos-or-search">Task 7: Cosmos or Search?</h2>
+<p>You have now stored data in both. They are for different jobs.</p>
+<ol>
+<li><table><thead><tr><th>Use</th><th>For</th></tr></thead><tbody><tr><td><strong>Cosmos DB</strong></td><td>Application state: conversations, preferences, per-user records. Fast point reads by id. Vectors alongside operational data.</td></tr><tr><td><strong>Azure AI Search</strong></td><td>Document retrieval: chunking pipelines, hybrid and semantic search, reranking. The document use case in Exercises 04-07.</td></tr></tbody></table></li>
+<li><p>Write down, in your own words, where each of these belongs in your own project: the original PDFs, the searchable chunks, and the conversation history.</p>
+<blockquote><p><strong>Note</strong>: They are three different stores with three different access models and three different retention rules. Putting them all in one place is a decision you should make deliberately, not by accident.</p></blockquote></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Why is <code>/userId</code> as a partition key not access control?</summary><ul><li>A. It is — Cosmos enforces it</li><li>B. Anyone with the database role can query any partition</li><li>C. Because it is a string</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>You proved it in Task 6 with a cross-partition query.</p></div></details>
+<details class="kc"><summary>2. You save a conversation to Cosmos. Does the model now remember it?</summary><ul><li>A. Yes, automatically</li><li>B. No — your application has to read it and put it in the prompt</li><li>C. Only if TTL is set</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>The database stores. The application remembers. That was Task 4.</p></div></details>
+<details class="kc"><summary>3. Why do the conversation and the preferences have different TTLs?</summary><ul><li>A. To save money</li><li>B. They are different kinds of memory with different useful lives</li><li>C. Cosmos requires it</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>A conversation is over in an hour. How someone likes to be addressed is worth keeping.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You derived an identity from a token, stored a conversation and preferences with different lifetimes, recovered them, turned them back into a prompt, watched TTL expire an item, and saw that a partition key does not stop anyone reading anything.</p>
+<p>The sentence worth remembering: the database stores, the application remembers.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>The script&#x27;s last step deletes its own items. To remove them by hand, open Data Explorer and delete <code>conversation-1</code>, <code>preferences</code> and <code>temporary-note</code> from your own partition.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: If your instructor pointed you at a shared Cosmos account that also holds Foundry&#x27;s own <code>enterprise_memory</code> database, do not touch it. That is the service&#x27;s storage, not yours.</p></blockquote>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/cosmos-db/nosql/time-to-live">Cosmos DB time to live</a></li><li><a href="https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search">Cosmos DB vector search</a></li><li><a href="https://learn.microsoft.com/azure/foundry/agents/concepts/standard-agent-setup">Standard agent setup</a></li></ul>
+<div class="pager"><a href="07-keep-the-index-fresh.html">&#8592; Keep the index fresh</a><a href="09-external-tools.html">Connect external tools &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

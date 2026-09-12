@@ -294,3 +294,24 @@ footer.site .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
   body { background: #fff; }
   details.kc[open] summary ~ * { display: block; }
 }
+
+/* ---- progressive build-up: the complete file after each task ---- */
+details.wholefile {
+  margin-top: 16px;
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--accent);
+  border-radius: 4px;
+  background: var(--paper);
+  padding: 10px 14px;
+}
+details.wholefile summary {
+  cursor: pointer;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+details.wholefile[open] summary { margin-bottom: 4px; }
+details.wholefile pre { margin-top: 8px; max-height: 30em; }
+
+/* the "add this" code blocks sit tight under their instruction */
+li > pre:first-child { margin-top: 8px; }

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme resident assistant</title>
+<style>
+  body { font-family: "Segoe UI", sans-serif; max-width: 720px; margin: 40px auto;
+         padding: 0 16px; line-height: 1.5; }
+  #who { color: #555; font-size: .9rem; }
+  #sources { color: #555; font-size: .85rem; margin-top: 12px; }
+  #answer { white-space: pre-wrap; margin-top: 8px; min-height: 3em; }
+  input, button { font-size: 1rem; padding: 8px; }
+  input { width: 70%; }
+  button { cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Acme resident assistant</h1>
+
+<p id="who">Not signed in.</p>
+<button id="signin">Sign in</button>
+
+<div id="chat" hidden>
+  <p>
+    <input id="question" placeholder="When is my inspection?" autocomplete="off">
+    <button id="ask">Ask</button>
+  </p>
+  <div id="sources"></div>
+  <div id="answer"></div>
+</div>
+
+<!-- Pinned version. For a managed rollout, host a reviewed copy yourself. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal-browser/3.28.1/msal-browser.min.js"></script>
+<script>
+// `msal` is the library's own global, so our instance needs a different name.
+let signIn, scope;
+
+async function start() {
+  // The server tells us which app to sign into. These are public IDs.
+  const config = await (await fetch("/config")).json();
+  scope = config.scope;
+
+  signIn = new msal.PublicClientApplication({
+    auth: {
+      clientId: config.clientId,
+      authority: `https://login.microsoftonline.com/${config.tenant}`,
+      redirectUri: window.location.origin
+    }
+  });
+  await signIn.initialize();
+}
+
+async function getToken() {
+  const accounts = signIn.getAllAccounts();
+  const request = { scopes: [scope], account: accounts[0] };
+  try {
+    return (await signIn.acquireTokenSilent(request)).accessToken;
+  } catch {
+    return (await signIn.acquireTokenPopup(request)).accessToken;
+  }
+}
+
+document.getElementById("signin").onclick = async () => {
+  const result = await signIn.loginPopup({ scopes: [scope] });
+  document.getElementById("who").textContent = "Signed in as " + result.account.username;
+  document.getElementById("signin").hidden = true;
+  document.getElementById("chat").hidden = false;
+};
+
+document.getElementById("ask").onclick = async () => {
+  const question = document.getElementById("question").value;
+  const answer = document.getElementById("answer");
+  const sources = document.getElementById("sources");
+
+  answer.textContent = "";
+  sources.textContent = "";
+
+  const response = await fetch("/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + await getToken()
+    },
+    // Notice what we send: a question. No user id, no groups. The server
+    // works out who we are from the token.
+    body: JSON.stringify({ question })
+  });
+
+  if (!response.ok) {
+    answer.textContent = "Request refused: " + response.status;
+    return;
+  }
+
+  // Read the server-sent events as they arrive.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "", finished = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const event = JSON.parse(line.slice(6));
+
+      if (event.sources) {
+        sources.textContent = "Sources: " + (event.sources.join(", ") || "none");
+      }
+      // textContent, never innerHTML. Model output is untrusted text.
+      if (event.delta) answer.textContent += event.delta;
+      if (event.done) finished = true;
+    }
+  }
+
+  if (!finished) answer.textContent += "\n\n[answer incomplete]";
+};
+
+start();
+</script>
+</body>
+</html>

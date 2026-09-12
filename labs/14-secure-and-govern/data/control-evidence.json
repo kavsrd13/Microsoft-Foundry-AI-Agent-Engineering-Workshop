@@ -1,0 +1,93 @@
+[
+  {
+    "control": "user authentication and group authorisation",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "agent identity sponsor and lifecycle",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "Conditional Access report-only evidence",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "private endpoint DNS and outside-network rejection",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "deployment processing geography",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "Cosmos retention and ownership",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "Defender posture and alert evidence",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "Purview audit and enforcement evidence",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "content safety and prompt injection review",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "release gate and rollback",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "production telemetry and alerts",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "cost budget and ownership",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  },
+  {
+    "control": "Teams or M365 publishing approval",
+    "status": "pending",
+    "owner": "",
+    "evidence": "",
+    "checked_at": ""
+  }
+]

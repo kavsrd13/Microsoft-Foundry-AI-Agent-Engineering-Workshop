@@ -1,53 +1,93 @@
 # Microsoft Foundry AI Agent Engineering Workshop
 
-Twenty-four labs: sixteen original labs plus eight client engineering additions. The original labs are independent exercises for intermediate Python developers. Short scripts teach one concept at a time using fictional Acme Public Sector Pty Ltd data. Days 1–3 use the Foundry SDK; Day 4 adds Microsoft Agent Framework.
+**Fourteen hands-on exercises.** Connect to Foundry, build an agent that uses tools, turn a pile of PDFs
+into a grounded assistant that cites its sources and shows each person only what they may see, give it
+memory, measure whether it is any good, and decide whether it is safe to ship.
 
-Start with [SETUP.md](SETUP.md). Instructors should read the [Microsoft Learn brush-up guide](MSLEARN-BRUSH-UP-GUIDE.md), [INSTRUCTOR-GUIDE.md](INSTRUCTOR-GUIDE.md) and [VALIDATION.md](VALIDATION.md) before delivery. The code has local validation; a target-tenant rehearsal is still required before claiming classroom end-to-end readiness.
+Everything uses synthetic data belonging to a fictional council, Acme Public Sector Pty Ltd.
 
-## Client engineering additions
+## Start here
 
-Start with the [client course route](CLIENT-COURSE-MAP.md) and [requirements coverage matrix](CLIENT-REQUIREMENTS-MATRIX.md). Labs17–24 add embeddings, a connected RAG pipeline, Cosmos persistence/vectors, hosted tools, an authenticated streaming app, infrastructure/CI, evaluation gates and governance exercises. The combined pack contains31 hours of core exercises; select a teaching route and allow additional time for tenant setup and discussion.
+**→ [Open the exercises](https://kavsrd13.github.io/Microsoft-Foundry-AI-Agent-Engineering-Workshop/)**
 
-## Original lab map
+Or open [`self-paced/index.html`](self-paced/index.html) locally — the pages are static and need no server.
 
-| Day | Lab | Duration | Track | Status |
-|---|---|---|---|---|
-| 1 | [lab01-foundry-setup](./day1-foundry-sdk-foundations/lab01-foundry-setup/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 1 | [lab02-model-deployment](./day1-foundry-sdk-foundations/lab02-model-deployment/README.md) | 90 min | Foundry SDK | GA core; feature-specific caveats |
-| 1 | [lab03-prompt-agent](./day1-foundry-sdk-foundations/lab03-prompt-agent/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 1 | [lab04-responses-api](./day1-foundry-sdk-foundations/lab04-responses-api/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 2 | [lab05-function-tools](./day2-foundry-sdk-tools-and-rag/lab05-function-tools/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 2 | [lab06-document-intelligence](./day2-foundry-sdk-tools-and-rag/lab06-document-intelligence/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 2 | [lab07-search-integrated-vectorization](./day2-foundry-sdk-tools-and-rag/lab07-search-integrated-vectorization/README.md) | 90 min | Foundry SDK | GA core; feature-specific caveats |
-| 2 | [lab08-secure-rag](./day2-foundry-sdk-tools-and-rag/lab08-secure-rag/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 3 | [lab09-foundry-iq](./day3-foundry-sdk-enterprise/lab09-foundry-iq/README.md) | 45 min | Foundry SDK | Mixed GA / preview or prerelease |
-| 3 | [lab10-mcp-tools](./day3-foundry-sdk-enterprise/lab10-mcp-tools/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 3 | [lab11-evaluation](./day3-foundry-sdk-enterprise/lab11-evaluation/README.md) | 90 min | Foundry SDK | GA core; feature-specific caveats |
-| 3 | [lab12-tracing-and-governance](./day3-foundry-sdk-enterprise/lab12-tracing-and-governance/README.md) | 45 min | Foundry SDK | GA core; feature-specific caveats |
-| 4 | [lab13-maf-transition](./day4-agent-framework/lab13-maf-transition/README.md) | 45 min | Agent Framework | GA core; feature-specific caveats |
-| 4 | [lab14-session-and-context](./day4-agent-framework/lab14-session-and-context/README.md) | 45 min | Agent Framework | GA core; feature-specific caveats |
-| 4 | [lab15-middleware](./day4-agent-framework/lab15-middleware/README.md) | 45 min | Agent Framework | GA core; feature-specific caveats |
-| 4 | [lab16-orchestration-and-hosted](./day4-agent-framework/lab16-orchestration-and-hosted/README.md) | 90 min | Agent Framework | Mixed GA / preview or prerelease |
+Each exercise page contains **all the code you need**. You create a file, add to it a few lines at a time,
+and run it after each step. Every task also ends with a collapsible *complete file so far*, so if you lose
+track you can paste the whole thing and carry on.
 
-Each day has 225 minutes of specified lab time (15 hours total). Add demonstrations, discussion, breaks and participant practice to fit your four-day timetable; the supplied timings do not constitute a 32-hour syllabus.
+## The exercises
 
-```mermaid
-flowchart LR
- A[Day 1: project, deployment, agents, Responses] --> B[Day 2: tools, documents, Search, secure RAG]
- B --> C[Day 3: IQ, MCP, evaluation, tracing]
- C --> D[Day 4: Agent Framework, sessions, middleware, workflows]
- F[Foundry SDK project access] --> A
- F --> D
+| # | Exercise | Time | What you build |
+|---|---|---|---|
+| 01 | [Get started with Foundry](labs/01-get-started) | 90 min | Connect, list models, ask, converse, stream |
+| 02 | [Choose a model](labs/02-choose-a-model) | 75 min | Compare two models, embeddings, cost, vision |
+| 03 | [Build your first agent](labs/03-first-agent) | 90 min | Versioned agent, tools, the tool loop |
+| 04 | [Prepare documents](labs/04-prepare-documents) | 75 min | Extract PDFs, compare chunking strategies |
+| 05 | [Build a vector index](labs/05-vector-index) | 90 min | Embed, index, four kinds of search |
+| 06 | [Ground an agent](labs/06-ground-an-agent) | 90 min | Cited answers, permission filtering, the leak |
+| 07 | [Keep the index fresh](labs/07-keep-the-index-fresh) | 75 min | Add / change / delete, OCR |
+| 08 | [Give the agent memory](labs/08-agent-memory) | 90 min | Cosmos, TTL, what a partition key is not |
+| 09 | [Connect external tools](labs/09-external-tools) | 90 min | An HTTP tool with permissions, MCP |
+| 10 | [The Agent Framework](labs/10-agent-framework) | 90 min | Sessions, middleware, multi-agent workflows |
+| 11 | [Measure quality](labs/11-measure-quality) | 90 min | Retrieval metrics, a judge, a release gate |
+| 12 | [Observe and cost](labs/12-observe-and-cost) | 75 min | Tracing, token telemetry, failures |
+| 13 | [Build a chat app](labs/13-chat-app) | 120 min | Real sign-in, verified claims, streaming UI |
+| 14 | [Secure and govern](labs/14-secure-and-govern) | 75 min | Content safety, injection probes, readiness |
+
+About 20 hours of exercises. For a four-day delivery, run three or four a day.
+
+## Before you begin
+
+1. Install **Python 3.11**, **Git** and the **Azure CLI**.
+2. Sign in and pick your subscription:
+
+   ```powershell
+   az login --tenant YOUR-TENANT-ID
+   az account set --subscription YOUR-SUBSCRIPTION-ID
+   ```
+
+3. **Make a separate virtual environment for every exercise.** They pin different versions of the same
+   packages deliberately — Exercise 10 in particular needs an older `azure-ai-projects` than the rest.
+   One shared environment will break them.
+
+Each exercise folder holds its own `requirements.txt`, `.env.example`, `data/`, and a `solution/` folder
+with the finished working code to check yourself against.
+
+> **Note**: These exercises run against Azure resources your instructor or administrator supplies. Running
+> them uses quota and costs money. Every dataset here is synthetic — never substitute real citizen, staff
+> or customer records.
+
+## For instructors
+
+- [LAB-ANALYSIS.md](LAB-ANALYSIS.md) — the review and offline test report behind this material, including
+  what was verified and what still needs a tenant rehearsal.
+- [SETUP.md](SETUP.md) — resources to provision and roles to assign.
+- [AUSTRALIA-RESIDENCY.md](AUSTRALIA-RESIDENCY.md) — data residency notes. An Australia East project
+  location does not by itself establish where a request is processed; the model's deployment type does.
+
+Prerequisites to have ready: a Foundry project with two chat deployments and a vision-capable one; an Azure
+OpenAI resource with `text-embedding-3-small`; an Azure AI Search service with the semantic ranker enabled;
+Document Intelligence; Cosmos DB for NoSQL; Application Insights; Content Safety; and two test user
+accounts for Exercise 13.
+
+## How the material is built
+
+The code shown on each exercise page is **sliced out of the solution files**, not retyped, so the page and
+the working code cannot drift apart. To regenerate the pages after editing content:
+
+```powershell
+cd self-paced
+python build.py
 ```
 
-## How to use the code
+See [self-paced/README.md](self-paced/README.md) for the content format.
 
-Open the lab README, create its virtual environment, fill its `.env`, and run the named script from the lab folder. Prerequisite Azure resources are supplied independently by the instructor; the original labs do not require continuing prior state. Client deployment exercises explicitly reuse the supplied app/tool sources and identify required index schemas. Each lab has its own data, validation and cleanup. Read-only exercises do not manufacture unnecessary resources.
+## Earlier version
 
-The short examples intentionally use direct SDK calls and let ordinary SDK errors surface. Troubleshooting is in documentation. Extra machinery is limited to the concept being taught, access filtering, tool dispatch/time limits, recording owned resources and safe cleanup. Optional shared helpers are not required by learner scripts.
-
-The brief's package pins conflict: Days 1–3 use projects 2.6.0; the pinned Day 4 Foundry provider requires projects below 2.4.0 and uses 2.3.0 in a separate environment. See [PACKAGE-MATRIX.md](PACKAGE-MATRIX.md). Previews are identified per capability; do not infer feature GA status from a stable package version.
-
-Australia East project location alone does not establish processing residency. Review [AUSTRALIA-RESIDENCY.md](AUSTRALIA-RESIDENCY.md) and the [fallback matrix](RISK-FALLBACK-MATRIX.md).
-
-All Acme data is synthetic. No credentials, cloud exports, real citizen records or purported live recordings are bundled.
+The `day1-…` through `day4-…` folders and `Advance labs client-engineering/` hold the previous 24-lab
+version of this workshop, kept for reference. The material above supersedes it: those labs were more
+numerous, more terse, and asked learners to run supplied scripts rather than write the code themselves.
+Their supporting documents — [CLIENT-REQUIREMENTS-MATRIX.md](CLIENT-REQUIREMENTS-MATRIX.md),
+[PACKAGE-MATRIX.md](PACKAGE-MATRIX.md), [VALIDATION.md](VALIDATION.md) and others — describe that earlier
+structure and still contain links that were broken by a folder rename. See LAB-ANALYSIS.md, finding 2.

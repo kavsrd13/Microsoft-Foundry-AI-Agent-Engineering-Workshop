@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Put a tool in its own service, and connect it three ways | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#task-1-set-up">Task 1: Set up</a></li><li><a href="#task-2-build-the-tool">Task 2: Build the tool</a></li><li><a href="#task-3-call-it">Task 3: Call it</a></li><li><a href="#task-4-let-an-agent-use-it">Task 4: Let an agent use it</a></li><li><a href="#task-5-publish-it-over-mcp">Task 5: Publish it over MCP</a></li><li><a href="#task-6-which-connection-method">Task 6: Which connection method?</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Put a tool in its own service, and connect it three ways</h1>
+<p>In Exercise 03 your tools were functions in the same file as the agent. That is fine for learning and wrong for anything real — tools usually belong to other teams, other systems, and other permission models.</p>
+<p>Here the tool becomes a small HTTP service that checks whether the caller is allowed before it answers. Then you connect to it three different ways.</p>
+<p>This exercise takes approximately <strong>90</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>labs/09-external-tools</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>azure-functions</code>, <code>mcp</code>, <code>httpx</code> — needs Azure Functions Core Tools v4</div></div>
+<div class="tags"><span class="tag alt">Platform</span><span class="tag">Module 6</span><span class="tag">Module 7</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Build an HTTP tool that returns 401, 403, 404 and 200 correctly.</li><li>Call it from your own code with the right credential for where you are.</li><li>Let an agent use it, without the model ever seeing a token.</li><li>Publish the same function over MCP and discover it from a client.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li><strong>Azure Functions Core Tools v4</strong> installed.</li><li>A chat deployment and <strong>Cognitive Services OpenAI User</strong> for the agent task.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: Functions Core Tools does <strong>not</strong> do authentication. Running locally proves your <em>authorisation logic</em> works. It proves nothing about security.</p></blockquote>
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd labs/09-external-tools
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+</code></pre></li>
+<li><pre><code class="language-text">ORDER_TOOL_URL=http://localhost:7071/api/orders
+TOOL_SCOPE=api://YOUR-API-CLIENT-ID/.default
+AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE.openai.azure.com
+MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
+</code></pre></li>
+<li><p>Functions needs one more local file. Create <code>local.settings.json</code> — and do not commit it:</p>
+<pre><code class="language-json">{&quot;IsEncrypted&quot;: false, &quot;Values&quot;: {&quot;FUNCTIONS_WORKER_RUNTIME&quot;: &quot;python&quot;}}
+</code></pre></li>
+</ol>
+<h2 id="task-2-build-the-tool">Task 2: Build the tool</h2>
+<p>Create <code>order_tool.py</code>. This is an Azure Function: an HTTP service that happens to be easy to deploy.</p>
+<ol>
+<li><p>Paste the whole file:</p>
+<details class="wholefile"><summary>Show the complete <code>order_tool.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 09, part 1 - A tool that lives in its own service.
+
+This is an Azure Function. It is a normal HTTP service that happens to be
+easy to deploy. The agent never runs this code - your application calls it.
+
+Run it locally with:  func start
+&quot;&quot;&quot;
+
+import base64
+import json
+from pathlib import Path
+
+import azure.functions as func
+
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
+
+def load_orders():
+    with open(Path(__file__).parent.parent / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as f:
+        return json.load(f)
+
+
+@app.route(route=&quot;orders/{order_id}&quot;, methods=[&quot;GET&quot;])
+def get_order(request: func.HttpRequest) -&gt; func.HttpResponse:
+    &quot;&quot;&quot;Return one order, but only to a caller who is allowed to see it.&quot;&quot;&quot;
+
+    # When this is deployed with Entra authentication switched on, the
+    # platform checks the caller&#x27;s token BEFORE this function runs, and
+    # passes us what it found in this header. Locally there is no platform,
+    # so we fake the header - which proves our logic, not our security.
+    principal_header = request.headers.get(&quot;X-MS-CLIENT-PRINCIPAL&quot;)
+
+    if not principal_header:
+        return func.HttpResponse(&quot;Who are you?&quot;, status_code=401)
+
+    principal = json.loads(base64.b64decode(principal_header))
+    roles = [claim[&quot;val&quot;] for claim in principal[&quot;claims&quot;]
+             if claim[&quot;typ&quot;] == &quot;roles&quot;]
+
+    if &quot;Orders.Read&quot; not in roles:
+        return func.HttpResponse(&quot;You need the Orders.Read role&quot;, status_code=403)
+
+    wanted = request.route_params[&quot;order_id&quot;]
+    for order in load_orders():
+        if order[&quot;order_id&quot;] == wanted:
+            return func.HttpResponse(json.dumps(order), mimetype=&quot;application/json&quot;)
+
+    return func.HttpResponse(&quot;No such order&quot;, status_code=404)
+</code></pre></details></li>
+<li><p>Four outcomes, four different meanings:</p>
+<table><thead><tr><th>Situation</th><th>Status</th><th>Meaning</th></tr></thead><tbody><tr><td>No principal header</td><td>401</td><td>I do not know who you are</td></tr><tr><td>Signed in, no <code>Orders.Read</code></td><td>403</td><td>I know who you are, and no</td></tr><tr><td>Allowed, unknown order</td><td>404</td><td>Fine, but there is no such thing</td></tr><tr><td>Allowed, order exists</td><td>200</td><td>Here it is</td></tr></tbody></table>
+<blockquote class="warn"><p><strong>Caution</strong>: Never collapse 401 and 403 into one answer. They are different questions and the person debugging at 2am needs to know which one they hit.</p></blockquote></li>
+<li><p>The trigger says <code>AuthLevel.ANONYMOUS</code>, which always raises an eyebrow:</p>
+<pre><code class="language-python">app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+</code></pre>
+<blockquote><p><strong>Note</strong>: That is correct <strong>because the platform authenticates first</strong>. When this is deployed with Entra authentication switched on, the platform validates the caller&#x27;s token before your function runs and hands you the result in the header. It is not permission to deploy this without that turned on.</p></blockquote></li>
+<li><p>Start it. Leave this terminal running:</p>
+<pre><code class="language-powershell">func start
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: You should see <code>orders</code> listed as a function on <code>http://localhost:7071/api/orders/...</code></p></blockquote></li>
+</ol>
+<h2 id="task-3-call-it">Task 3: Call it</h2>
+<p>Open a <strong>second terminal</strong> in the same folder, with the virtual environment activated. Create <code>use_the_tool.py</code>.</p>
+<ol>
+<li><p>Start the file:</p>
+<pre><code class="language-python">&quot;&quot;&quot;Call the hosted tool.&quot;&quot;&quot;
+
+import base64
+import json
+import os
+from urllib.parse import urlparse
+
+import httpx
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+TOOL_URL = os.environ[&quot;ORDER_TOOL_URL&quot;]
+</code></pre></li>
+<li><p>Add the caller and a test:</p>
+<pre><code class="language-python">def call_the_tool(order_id=&quot;ORD-001&quot;):
+    &quot;&quot;&quot;Call the Function over HTTP, with whatever credential suits where we are.&quot;&quot;&quot;
+    url = TOOL_URL.rstrip(&quot;/&quot;) + &quot;/&quot; + order_id
+    headers = {}
+
+    if urlparse(url).hostname in (&quot;localhost&quot;, &quot;127.0.0.1&quot;):
+        # Local only. There is no platform to authenticate us, so we hand the
+        # function the header it expects. This is a test fixture, NOT security.
+        fake_principal = {&quot;claims&quot;: [{&quot;typ&quot;: &quot;roles&quot;, &quot;val&quot;: &quot;Orders.Read&quot;}]}
+        encoded = base64.b64encode(json.dumps(fake_principal).encode()).decode()
+        headers[&quot;X-MS-CLIENT-PRINCIPAL&quot;] = encoded
+    else:
+        # Deployed. Ask Entra for a real token for this API.
+        token = DefaultAzureCredential().get_token(os.environ[&quot;TOOL_SCOPE&quot;]).token
+        headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + token
+
+    response = httpx.get(url, headers=headers, timeout=20)
+    response.raise_for_status()
+    return response.json()
+
+
+def try_the_tool_directly():
+    print(&quot;\n=== Calling the tool over HTTP ===&quot;)
+    order = call_the_tool(&quot;ORD-001&quot;)
+    print(json.dumps(order, indent=2))
+
+
+def try_it_without_permission():
+    &quot;&quot;&quot;Show that the role check actually does something.&quot;&quot;&quot;
+    print(&quot;\n=== What happens without the right role ===&quot;)
+
+    url = TOOL_URL.rstrip(&quot;/&quot;) + &quot;/ORD-001&quot;
+
+    no_header = httpx.get(url, timeout=20)
+    print(f&quot;  no principal at all      -&gt; {no_header.status_code} (not authenticated)&quot;)
+
+    wrong_role = {&quot;claims&quot;: [{&quot;typ&quot;: &quot;roles&quot;, &quot;val&quot;: &quot;Something.Else&quot;}]}
+    encoded = base64.b64encode(json.dumps(wrong_role).encode()).decode()
+    response = httpx.get(url, headers={&quot;X-MS-CLIENT-PRINCIPAL&quot;: encoded}, timeout=20)
+    print(f&quot;  signed in, wrong role    -&gt; {response.status_code} (not authorised)&quot;)
+
+    right_role = {&quot;claims&quot;: [{&quot;typ&quot;: &quot;roles&quot;, &quot;val&quot;: &quot;Orders.Read&quot;}]}
+    encoded_ok = base64.b64encode(json.dumps(right_role).encode()).decode()
+    missing_url = TOOL_URL.rstrip(&quot;/&quot;) + &quot;/ORD-999999&quot;
+    response = httpx.get(missing_url, headers={&quot;X-MS-CLIENT-PRINCIPAL&quot;: encoded_ok},
+                         timeout=20)
+    print(f&quot;  allowed, no such order   -&gt; {response.status_code} (not found)&quot;)
+
+    print(&quot;\n  401, 403 and 404 mean different things. Keep them different.&quot;)
+</code></pre></li>
+<li><p>Add a main block:</p>
+<pre><code class="language-python">if __name__ == &quot;__main__&quot;:
+    try_the_tool_directly()
+    try_it_without_permission()
+</code></pre></li>
+<li><pre><code class="language-powershell">python use_the_tool.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The order, then 401, 403 and 404 in turn.</p></blockquote></li>
+<li><p>Look at how <code>call_the_tool</code> picks its credential:</p>
+<ul><li><strong>localhost</strong> → it fakes the principal header, because there is no platform to authenticate. This is a test fixture and the comment says so.</li><li><strong>anything else</strong> → it asserts HTTPS and asks Entra for a real token.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: The fake header is fenced behind a localhost check on purpose. A fixture that can accidentally run against a deployed endpoint is a very bad fixture.</p></blockquote></li>
+</ol>
+<h2 id="task-4-let-an-agent-use-it">Task 4: Let an agent use it</h2>
+<ol>
+<li><p>Add this:</p>
+<pre><code class="language-python">def let_the_agent_use_it(client):
+    &quot;&quot;&quot;The model asks for the tool; our code decides whether to call it.&quot;&quot;&quot;
+    print(&quot;\n=== Letting an agent use the tool ===&quot;)
+
+    tool_schema = {
+        &quot;type&quot;: &quot;function&quot;,
+        &quot;name&quot;: &quot;get_order_status&quot;,
+        &quot;description&quot;: &quot;Look up one order by its order ID, for example ORD-001.&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;order_id&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;order_id&quot;],
+            &quot;additionalProperties&quot;: False,
+        },
+        &quot;strict&quot;: True,
+    }
+
+    question = &quot;What is the status of ORD-001?&quot;
+    print(&quot;Question:&quot;, question)
+
+    response = client.responses.create(
+        model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+        input=question,
+        tools=[tool_schema],
+    )
+
+    for item in response.output:
+        if item.type != &quot;function_call&quot;:
+            continue
+
+        # We check the name ourselves before running anything.
+        if item.name != &quot;get_order_status&quot;:
+            print(&quot;  refusing to run&quot;, item.name)
+            continue
+
+        arguments = json.loads(item.arguments)
+        print(f&quot;  model asked for: {item.name}({arguments})&quot;)
+
+        result = call_the_tool(arguments[&quot;order_id&quot;])
+
+        response = client.responses.create(
+            model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+            previous_response_id=response.id,
+            input=[{
+                &quot;type&quot;: &quot;function_call_output&quot;,
+                &quot;call_id&quot;: item.call_id,
+                &quot;output&quot;: json.dumps(result),
+            }],
+        )
+
+    print(&quot;\nAnswer:&quot;, response.output_text)
+    print(&quot;\nThe model never saw the token and never ran any Python.&quot;)
+</code></pre></li>
+<li><p>Extend the main block:</p>
+<pre><code class="language-python">    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), &quot;https://cognitiveservices.azure.com/.default&quot;
+    )
+    client = OpenAI(
+        base_url=os.environ[&quot;AZURE_OPENAI_ENDPOINT&quot;].rstrip(&quot;/&quot;) + &quot;/openai/v1/&quot;,
+        api_key=token_provider,
+    )
+    let_the_agent_use_it(client)
+</code></pre></li>
+<li><pre><code class="language-powershell">python use_the_tool.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: <code>model asked for: get_order_status({&#x27;order_id&#x27;: &#x27;ORD-001&#x27;})</code>, then an answer using the real data.</p></blockquote></li>
+<li><p>Trace the path the request took:</p>
+<ul><li>The model returned a <strong>request</strong> to call a function.</li><li>Your code checked the name, then made the <strong>HTTP call itself</strong>, with its own credential.</li><li>The Function checked the caller&#x27;s permission before answering.</li><li>The result went back to the model as a <code>function_call_output</code>.</li></ul>
+<blockquote><p><strong>Note</strong>: The model never held the token and never ran any code. Compare this with Exercise 03, where the tool was a local function — the loop is identical, but the execution and the authorisation now live somewhere else entirely.</p></blockquote></li>
+</ol>
+<h2 id="task-5-publish-it-over-mcp">Task 5: Publish it over MCP</h2>
+<p>MCP lets a client <strong>discover</strong> what tools exist rather than being told. You do not write a schema — the docstring and type hints become one.</p>
+<ol>
+<li><p>Create <code>mcp_server.py</code>:</p>
+<details class="wholefile"><summary>Show the complete <code>mcp_server.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 09, part 3 - Publish the tool over MCP.
+
+MCP lets any MCP-speaking client discover and call your tool without you
+writing a schema by hand. The docstring and type hints below become the
+tool&#x27;s description and its argument schema.
+
+Run it with:  python mcp_server.py
+Leave it running, then run mcp_client.py in another terminal.
+&quot;&quot;&quot;
+
+from mcp.server.fastmcp import FastMCP
+
+from use_the_tool import call_the_tool
+
+server = FastMCP(&quot;Acme orders&quot;, host=&quot;127.0.0.1&quot;, port=8000)
+
+
+@server.tool()
+def get_order_status(order_id: str) -&gt; dict:
+    &quot;&quot;&quot;Look up one Acme order by its order ID, for example ORD-001.&quot;&quot;&quot;
+    return call_the_tool(order_id)
+
+
+if __name__ == &quot;__main__&quot;:
+    print(&quot;MCP server listening on http://127.0.0.1:8000/mcp&quot;)
+    print(&quot;It binds to localhost only. A cloud agent cannot reach your laptop.&quot;)
+    server.run(transport=&quot;streamable-http&quot;)
+</code></pre></details></li>
+<li><p>Start it in a <strong>third terminal</strong>:</p>
+<pre><code class="language-powershell">python mcp_server.py
+</code></pre></li>
+<li><p>Create <code>mcp_client.py</code>:</p>
+<details class="wholefile"><summary>Show the complete <code>mcp_client.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 09, part 4 - Discover and call the tool over MCP.
+
+Notice that we never told this client what tools exist. It asks.
+
+Run it with:  python mcp_client.py
+(mcp_server.py must be running in another terminal)
+&quot;&quot;&quot;
+
+import asyncio
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+
+async def main():
+    async with streamablehttp_client(&quot;http://127.0.0.1:8000/mcp&quot;) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            print(&quot;\n=== What tools does this server offer? ===&quot;)
+            listing = await session.list_tools()
+            for tool in listing.tools:
+                print(f&quot;  {tool.name}: {tool.description}&quot;)
+                print(f&quot;    arguments: {tool.inputSchema.get(&#x27;properties&#x27;, {})}&quot;)
+
+            print(&quot;\n=== Calling one ===&quot;)
+            result = await session.call_tool(&quot;get_order_status&quot;, {&quot;order_id&quot;: &quot;ORD-001&quot;})
+            for content in result.content:
+                print(content.text)
+
+
+if __name__ == &quot;__main__&quot;:
+    asyncio.run(main())
+</code></pre></details></li>
+<li><p>Run it back in the second terminal:</p>
+<pre><code class="language-powershell">python mcp_client.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The client lists <code>get_order_status</code> with its description and argument schema — which it was never told about — then calls it and gets the order.</p></blockquote></li>
+<li><p>Three limits worth recording before anyone suggests deploying this:</p>
+<ul><li>The MCP server calls the Function with <strong>its own</strong> credential. The end user&#x27;s identity does not flow through.</li><li>It binds to <strong>localhost</strong>. A cloud-hosted agent cannot reach your laptop.</li><li>A remotely hosted MCP server needs its <strong>own</strong> HTTPS, authentication and network controls. It does not inherit the Function&#x27;s.</li></ul></li>
+</ol>
+<h2 id="task-6-which-connection-method">Task 6: Which connection method?</h2>
+<ol>
+<li><table><thead><tr><th>Method</th><th>How the tool is found</th><th>Best for</th></tr></thead><tbody><tr><td>Function calling</td><td>You write the schema (Exercise 03)</td><td>Tools your own app owns</td></tr><tr><td>MCP</td><td>Discovered at runtime</td><td>Evolving tool sets shared across agents</td></tr><tr><td>OpenAPI</td><td>A published contract — see <code>data/openapi.json</code></td><td>Existing REST APIs</td></tr><tr><td>Toolbox</td><td>Registered once, discovered by many agents</td><td>Reuse across a team</td></tr><tr><td>Logic Apps</td><td>A connector</td><td>Workflows across other business systems</td></tr></tbody></table></li>
+<li><p>Open <code>data/openapi.json</code> and find the security section:</p>
+<pre><code class="language-json">&quot;security&quot;: [{&quot;bearerAuth&quot;: []}]
+</code></pre>
+<blockquote class="warn"><p><strong>Caution</strong>: A schema <strong>declares</strong> that a token is required. It does not obtain one and it does not check one. Declaration and enforcement are different things, and only your Function does the second.</p></blockquote></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Does writing a tool schema host the tool?</summary><ul><li>A. Yes, the model runs it</li><li>B. No — the schema describes it; a separate service runs it</li><li>C. Only for OpenAPI</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>Description and execution are separate. That separation is what lets a tool have its own permissions.</p></div></details>
+<details class="kc"><summary>2. Why does running locally not prove your tool is secure?</summary><ul><li>A. Core Tools accepts whatever header you send it</li><li>B. Localhost is always insecure</li><li>C. It does prove it</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>You faked the principal yourself. Only a deployed platform actually validates a token.</p></div></details>
+<details class="kc"><summary>3. Your MCP server calls the Function. Whose identity does the Function see?</summary><ul><li>A. The end user&#x27;s</li><li>B. The MCP server&#x27;s own</li><li>C. The model&#x27;s</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>Identity does not flow through automatically. Passing it on is extra design work.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You moved a tool out of your script into an HTTP service that checks permissions, called it with the right credential for where you were running, let an agent use it without ever exposing a token to the model, and published the same function over MCP for a client to discover.</p>
+<p>The rule that holds across all of it: declaring an interface is not hosting it, and a local fixture is not authentication.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Stop all three terminals with Ctrl+C.</p>
+<p>Delete <code>local.settings.json</code> if you are sharing this folder.</p>
+<p>Nothing was deployed to Azure in this exercise unless you went on to publish the Function yourself.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/azure-functions/functions-reference-python">Azure Functions Python</a></li><li><a href="https://learn.microsoft.com/azure/app-service/configure-authentication-provider-aad">Configure Entra authentication</a></li><li><a href="https://github.com/modelcontextprotocol/python-sdk">MCP Python SDK</a></li><li><a href="https://learn.microsoft.com/azure/foundry/agents/how-to/tools/openapi">Foundry OpenAPI tools</a></li></ul>
+<div class="pager"><a href="08-agent-memory.html">&#8592; Give the agent memory</a><a href="10-agent-framework.html">The Agent Framework &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>
