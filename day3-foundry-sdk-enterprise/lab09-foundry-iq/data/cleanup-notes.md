@@ -1,0 +1,1 @@
+Shared Foundry projects, models, Search services and Application Insights are prerequisites and are not lab-owned. Do not delete them. Local output files can be removed after retaining any needed evidence.

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Deploy the assistant with Bicep, gate it in CI, and promote across environments | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#review-the-infrastructure-before-provisioning">Review the infrastructure before provisioning</a></li><li><a href="#provision-and-deploy">Provision and deploy</a></li><li><a href="#gate-the-deployment-on-evaluation">Gate the deployment on evaluation</a></li><li><a href="#promote-through-environments">Promote through environments</a></li><li><a href="#publishing-and-hosting-alternatives">Publishing and hosting alternatives</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Deploy the assistant with Bicep, gate it in CI, and promote across environments</h1>
+<p>This exercise turns Exercise 21&#x27;s local application into deployed infrastructure, and then puts a quality gate in front of the deployment. You provision the footprint with Bicep through <code>azd</code>, deploy the web app and a separate Functions tool, and run a GitHub Actions workflow that refuses to deploy when the evaluation fails.</p>
+<p>The container, channel-publishing and autoscaling parts are guided configurations rather than pre-provisioned by the template, and the exercise is explicit about that distinction throughout.</p>
+<p>This exercise takes approximately <strong>120</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>Advance labs client-engineering/lab22-deployment-and-devops</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>PyYAML</code> only for the validator; needs Azure CLI, azd, Bicep and Functions Core Tools v4</div></div>
+<div class="tags"><span class="tag alt">Advanced</span><span class="tag">Module 1</span><span class="tag">Module 7</span><span class="tag">Module 8</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Distinguish infrastructure deployment from application deployment.</li><li>Separate end-user authentication from managed service identity.</li><li>Apply an evaluation gate before a deployment step.</li><li>Promote the same reviewed commit through dev, test and prod.</li><li>Distinguish web hosting from publishing an agent to Teams or M365 Copilot.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>Exercise 21 completed — this exercise deploys that application.</li><li>Azure CLI, <code>azd</code>, Bicep, Python 3.11 and Functions Core Tools v4.</li><li>A workshop subscription allowing resource group creation, resource creation and <strong>scoped role assignments</strong>.</li><li>Verified availability and quota for P1v3, Search Basic, Cosmos serverless and your chosen model, version and SKU.</li><li>Separate Entra API and SPA registrations <strong>per environment</strong>.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: This footprint is billable and is a <strong>public-endpoint teaching footprint</strong>, not a production network baseline. It does not create tenant registrations, populate Search, connect bring-your-own Agent Service capability hosts, or implement private networking.</p></blockquote>
+<h2 id="review-the-infrastructure-before-provisioning">Review the infrastructure before provisioning</h2>
+<ol>
+<li><pre><code class="language-powershell">cd &quot;Advance labs client-engineering/lab22-deployment-and-devops&quot;
+</code></pre></li>
+<li><p>Open <code>src/infra/resources.bicep</code> and inventory what it creates: Storage with a private container, Search, Cosmos (serverless), a Foundry account with a project and chat deployment, Log Analytics and Application Insights, an App Service plan, a web app and a Function app.</p></li>
+<li><p>Notice the security posture expressed as configuration:</p>
+<pre><code class="language-bicep">properties: { ... disableLocalAuth: true ... }   // Search
+properties: { ... disableLocalAuth: true ... }   // Cosmos
+properties: { ... disableLocalAuth: true ... }   // Foundry account
+properties: { supportsHttpsTrafficOnly: true, minimumTlsVersion: &#x27;TLS1_2&#x27;,
+              allowBlobPublicAccess: false }     // Storage
+</code></pre>
+<p>Local authentication is disabled on Search, Cosmos and the Foundry account, so those services accept Entra identities only — the same posture every earlier exercise assumed.</p></li>
+<li><p>Find the two scoped role assignments granting the <strong>web app&#x27;s managed identity</strong> Search Index Data Reader and Cognitive Services OpenAI User.</p>
+<blockquote><p><strong>Note</strong>: Two different identities are in play and it is worth stating this clearly. The <strong>user</strong> signs in through Exercise 21&#x27;s Entra registrations; the <strong>application</strong> reaches Azure with its managed identity. The user&#x27;s token is never forwarded as a service credential.</p></blockquote></li>
+<li><p>Read the comment above the Cosmos database:</p>
+<pre><code class="language-bicep">// Application-owned memory. This is NOT Foundry enterprise_memory thread storage.
+</code></pre>
+<p>Exactly the distinction you verified in Exercise 19. This template does not attach Cosmos as Foundry&#x27;s <code>enterprise_memory</code>.</p></li>
+<li><p>Compile the template locally before doing anything in Azure:</p>
+<pre><code class="language-powershell">az bicep build --file src/infra/main.bicep
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: It should complete with no errors and no warnings. Compilation is fast and free; a failed provision is neither.</p></blockquote></li>
+<li><p>Run the structural validator too:</p>
+<pre><code class="language-powershell">python -m pip install -r requirements.txt
+python validate.py
+</code></pre>
+<p>Among other things it asserts that the deploy steps in the workflow come <strong>after</strong> the gate step, that the Function uses <code>AuthLevel.FUNCTION</code>, and that <code>disableLocalAuth: true</code> is present.</p></li>
+</ol>
+<h2 id="provision-and-deploy">Provision and deploy</h2>
+<ol>
+<li><pre><code class="language-powershell">az login
+azd auth login
+azd env new resident-dev
+azd env set AZURE_SUBSCRIPTION_ID YOUR-SUBSCRIPTION-ID
+azd env set AZURE_LOCATION australiaeast
+azd env set ENTRA_API_CLIENT_ID YOUR-API-ID
+azd env set ENTRA_SPA_CLIENT_ID YOUR-SPA-ID
+azd env set MODEL_NAME YOUR-AVAILABLE-MODEL
+azd env set MODEL_VERSION YOUR-AVAILABLE-VERSION
+azd env set MODEL_SKU Standard
+azd provision
+</code></pre>
+<blockquote class="warn"><p><strong>Caution</strong>: Read the provision change summary before accepting it. This is the last cheap moment to notice a wrong region or an oversized SKU.</p></blockquote></li>
+<li><pre><code class="language-powershell">azd deploy
+</code></pre>
+<p><code>azure.yaml</code> points its <code>web</code> service at Exercise 21&#x27;s folder and its <code>tools</code> service at <code>src/function</code>, so one command deploys both.</p></li>
+<li><p>Add the deployed HTTPS origin as an SPA redirect URI in your Entra SPA registration. Sign-in will fail until the origin matches exactly.</p></li>
+<li><p>Seed the <code>resident-records</code> Search index using Exercise 21&#x27;s documented ACL fields, mapping them explicitly. Give <strong>only</strong> the ingestion identity write permission.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: <code>azd provision</code> creates an <em>empty</em> Search service. A provisioned but unpopulated index cannot answer anything, and the symptom looks like a broken app rather than missing data.</p></blockquote></li>
+<li><p>Open the deployed app and repeat the <strong>two-user ACL test</strong> from Exercise 21 against the real deployment.</p>
+<blockquote class="ok"><p><strong>Check</strong>: This live test is required in addition to the mocked tests. Mocked tests verify your logic; only this verifies your deployed configuration.</p></blockquote></li>
+<li><p>Call the deployed Function from a server-side client:</p>
+<pre><code class="language-powershell">curl -H &quot;x-functions-key: YOUR-KEY&quot; https://YOUR-FUNCTION.azurewebsites.net/api/collection
+</code></pre>
+<p>A request without the key must fail.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: A function key is a shared secret. Never place it in browser code or in source control. This sample uses a key to teach the contrast; Exercise 20 shows the Entra-authenticated pattern you should prefer for real tools.</p></blockquote></li>
+</ol>
+<h2 id="gate-the-deployment-on-evaluation">Gate the deployment on evaluation</h2>
+<p>Open <code>src/workflow.yml</code> and <code>src/CI-CD.md</code>. The ordering of the steps is the substance of this section.</p>
+<ol>
+<li><p>The workflow runs, in order: Exercise 21&#x27;s offline authenticated tests → Azure login via OIDC → Exercise 23&#x27;s evaluation → <strong>the gate</strong> → only then the two deploy steps.</p>
+<blockquote class="ok"><p><strong>Check</strong>: <code>validate.py</code> asserts programmatically that both deploy actions appear after the gate step. A gate that runs after deployment is decoration.</p></blockquote></li>
+<li><p>Note that authentication uses OIDC federation, not a stored secret:</p>
+<pre><code class="language-yaml">permissions:
+  contents: read
+  id-token: write
+</code></pre>
+<p>Configure a federated credential per environment with issuer <code>https://token.actions.githubusercontent.com</code>, audience <code>api://AzureADTokenExchange</code> and subject <code>repo:OWNER/REPOSITORY:environment:dev</code>. No client secret is required.</p></li>
+<li><p>The immutable <code>github.sha</code> flows through checkout, evaluation, the gate and the artifact name, so the evidence is bound to exactly the code that would be deployed.</p></li>
+<li><blockquote class="warn"><p><strong>Caution</strong>: The workflow paths assume the repository contains a <code>foundry-agent-workshop/</code> folder with a <code>client-engineering/</code> subfolder. **Adjust every path in <code>workflow.yml</code> to match your own repository layout before enabling CI** — including the folder name used for these advanced labs. The distributed template does not activate CI by itself.</p></blockquote></li>
+<li><p>Do the rejection exercise, which is the one that teaches the most: in Exercise 23, change the candidate prompt so it answers without evidence. Run the workflow in <code>dev</code>. Observe the gate fail and <strong>no deployment occur</strong>. Then restore the prompt.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Do not lower the threshold to make a bad candidate pass. If you find yourself tempted, that is the gate doing its job.</p></blockquote></li>
+</ol>
+<h2 id="promote-through-environments">Promote through environments</h2>
+<ol>
+<li><p>Create GitHub environments <code>dev</code>, <code>test</code> and <code>prod</code>. Restrict deployment branches to your release branch and add required reviewers for test and prod.</p></li>
+<li><p>Use a <strong>separate deployment service principal per environment</strong>, and assign it Website Contributor only on that environment&#x27;s two web and function resources.</p>
+<blockquote><p><strong>Note</strong>: This code-deployment workflow cannot provision infrastructure or grant roles. Infrastructure changes go through reviewed IaC separately — which is the point of keeping them apart.</p></blockquote></li>
+<li><p>Configure the environment variables listed in <code>src/CI-CD.md</code> in <strong>each</strong> environment. The evaluation variables must point at a prepared Exercise 23 fixture compatible with that environment, not at a freshly provisioned empty Search service.</p></li>
+<li><p>Dispatch <code>dev</code> for a reviewed commit, run live smoke and access tests, then dispatch <code>test</code> and <code>prod</code> <strong>at the same commit</strong>, obtaining the required reviews.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: The example does not automatically prove a SHA passed an earlier environment. Reviewers must verify the prior successful run and its live evidence. A production extension can enforce that attestation automatically.</p></blockquote></li>
+<li><p>Roll back by dispatching a previously verified commit with its matching configuration and index schema, and re-running the gate.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Code rollback does not undo data changes. Model, index and schema compatibility must be checked separately — an old application against a new index schema is its own kind of outage.</p></blockquote></li>
+</ol>
+<h2 id="publishing-and-hosting-alternatives">Publishing and hosting alternatives</h2>
+<p>Open <code>src/PUBLISHING.md</code>. These are guided tenant exercises, deliberately separate from the provisioned footprint.</p>
+<ol>
+<li><p><strong>Teams and M365 Copilot.</strong> Publish the persistent agent version from Exercise 03 — not Exercise 21&#x27;s stateless app, which is not a publishable Foundry agent version. Record the version ID, the endpoint or channel, the actual conversation result and the rollback target.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Publishing can create an agent application, an identity and Bot Service resources. Confirm permissions and channel policy with your tenant administrator first. Also test an <strong>excluded</strong> user: publishing does not automatically reproduce Exercise 21&#x27;s JWT-to-ACL filter, so keep channel testing on public synthetic knowledge until that identity path is implemented.</p></blockquote></li>
+<li><p><strong>Autoscaling.</strong> The supplied template provisions a fixed P1v3 plan with capacity 1. Add an approved Azure Monitor autoscale rule (minimum 1, maximum 2), generate bounded synthetic load, observe the change, then remove the rule.</p>
+<blockquote><p><strong>Note</strong>: Autoscaling is deliberately a guided portal exercise here rather than part of the Bicep, so you configure and observe it rather than inheriting it.</p></blockquote></li>
+<li><p><strong>Container Apps.</strong> Build Exercise 21&#x27;s Dockerfile using the lab folder as the build context, push to an approved registry, and deploy with ingress on port 8000. Configure HTTP concurrent-request scaling with min 1 and max 2, and watch replicas change.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Give the container its <strong>own</strong> managed identity and assign it Search reader and Foundry inference roles. Do not reuse the App Service identity. Register the container&#x27;s HTTPS origin in the SPA redirect list, and complete both user ACL tests before shifting any traffic.</p></blockquote></li>
+<li><p>These are alternatives, not three simultaneous production hosts. Record which you chose and why.</p></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. What does <code>azd provision</code> create?</summary><ul><li>A. Infrastructure</li><li>B. User conversations and index content</li><li>C. Teams channel approval</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>It creates resources. Seeding Search, configuring channels and registering Entra apps are all separate steps.</p></div></details>
+<details class="kc"><summary>2. Does the reference RAG gate prove the deployed application&#x27;s user ACLs work?</summary><ul><li>A. Yes</li><li>B. No — it evaluates the reference pipeline, not the deployed app&#x27;s JWT path</li><li>C. Only in production</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>The gate measures retrieval and answer quality. The two-user live test is what covers ACLs.</p></div></details>
+<details class="kc"><summary>3. Where does a function key belong?</summary><ul><li>A. In browser code</li><li>B. In source control</li><li>C. In an approved server-side secret store</li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>It is a shared secret. Prefer the Entra-authenticated pattern from Exercise 20 for real tools.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You reviewed and compiled a Bicep footprint that disables local authentication and scopes role assignments to a managed identity, deployed Exercise 21&#x27;s app and a separate Functions tool with <code>azd</code>, verified the two-user ACL test against the real deployment, and ran an evaluation-gated pipeline that refuses to deploy failing evidence.</p>
+<p>You also kept the boundaries honest: infrastructure and application deployment are separate, the gate does not certify ACLs, and publishing to a channel is a different exercise from web hosting.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Stop any local processes, then remove the isolated environment from this lab folder:</p>
+<pre><code class="language-powershell">azd env get-values
+azd down
+</code></pre>
+<blockquote class="warn"><p><strong>Caution</strong>: <code>azd down</code> removes billable resources <strong>and data</strong>. Confirm you are targeting your own environment and resource group — never a shared one.</p></blockquote>
+<p>Remove workshop-only Entra registrations, federated credentials and GitHub environments separately. <code>python cleanup.py</code> is informational and deletes nothing in Azure.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/developer/azure-developer-cli/pipeline-github-actions">azd GitHub Actions pipelines</a></li><li><a href="https://learn.microsoft.com/azure/developer/github/connect-from-azure-openid-connect">Connect from Azure with OIDC</a></li><li><a href="https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot">Foundry publishing</a></li><li><a href="https://learn.microsoft.com/azure/container-apps/scale-app">Container Apps scaling</a></li></ul>
+<div class="pager"><a href="21-agent-web-application.html">&#8592; Authenticated streaming agent app</a><a href="23-evaluation-and-operations.html">Release gates and operations &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

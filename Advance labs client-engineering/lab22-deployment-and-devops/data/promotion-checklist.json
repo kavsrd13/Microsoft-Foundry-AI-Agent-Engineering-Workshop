@@ -1,0 +1,1 @@
+{"dev":["seed index", "app auth smoke test"],"test":["live reference RAG quality gate", "two-user ACL test", "streaming", "tool authentication"],"prod":["same reviewed commit", "environment approval", "network and residency sign-off", "rollback version recorded"]}

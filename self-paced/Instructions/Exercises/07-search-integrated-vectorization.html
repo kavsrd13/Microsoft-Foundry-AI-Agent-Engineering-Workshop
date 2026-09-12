@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Build a managed ingestion pipeline with integrated vectorization | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#set-up">Set up</a></li><li><a href="#understand-the-five-objects-you-are-about-to-create">Understand the five objects you are about to create</a></li><li><a href="#run-the-pipeline-and-inspect-execution">Run the pipeline and inspect execution</a></li><li><a href="#compare-managed-and-custom-ingestion">Compare managed and custom ingestion</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Build a managed ingestion pipeline with integrated vectorization</h1>
+<p>Exercise 06 chunked documents in Python. This exercise hands the same work to Azure AI Search, which runs it as a managed pipeline: an <strong>indexer</strong> reads a data source, a <strong>skillset</strong> splits and embeds the text, and <strong>index projections</strong> write one document per chunk.</p>
+<p>This is the client&#x27;s <em>integrated vectorization</em> requirement in full — indexer, Text Split skill and embedding skill — and it is the managed alternative to the fully visible Python pipeline you build in Exercise 18. Building both is what lets you argue for one.</p>
+<p>This exercise takes approximately <strong>90</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>day2-foundry-sdk-tools-and-rag/lab07-search-integrated-vectorization</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>azure-search-documents==12.0.0</code>, <code>azure-storage-blob==12.30.1</code></div></div>
+<div class="tags"><span class="tag alt">Foundry SDK</span><span class="tag">Module 4</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Create a vector index with an HNSW profile and a semantic configuration.</li><li>Configure a Blob data source that authenticates with a managed identity, not a connection secret.</li><li>Chain a Text Split skill and an Azure OpenAI embedding skill in a skillset.</li><li>Project chunk fields — including page and permission metadata — onto child documents.</li><li>Run a hybrid query with semantic reranking.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>An Azure AI Search service with <strong>semantic ranking enabled</strong>, and a system-assigned managed identity.</li><li>A storage account for indexer input.</li><li>An Azure OpenAI resource with a <code>text-embedding-3-small</code> deployment.</li><li>Roles: <strong>Search Service Contributor</strong> and <strong>Search Index Data Contributor</strong> for you; <strong>Storage Blob Data Reader</strong> and <strong>Cognitive Services OpenAI User</strong> for the <em>Search service&#x27;s</em> managed identity.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: The identity assignments above are the usual cause of failure in this exercise. The Search service, not you, reads the blobs and calls the embedding model. Assign those two roles to the Search service&#x27;s managed identity and allow time for propagation before you run anything.</p></blockquote>
+<h2 id="set-up">Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd day2-foundry-sdk-tools-and-rag/lab07-search-integrated-vectorization
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+az login
+</code></pre></li>
+<li><p>Fill in <code>.env</code>:</p>
+<pre><code class="language-text">SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net
+STORAGE_ACCOUNT_URL=https://YOUR-STORAGE.blob.core.windows.net
+STORAGE_RESOURCE_ID=/subscriptions/.../providers/Microsoft.Storage/storageAccounts/YOUR-STORAGE
+AZURE_OPENAI_ENDPOINT=https://YOUR-OPENAI.openai.azure.com
+EMBEDDING_DEPLOYMENT=text-embedding-3-small
+</code></pre>
+<blockquote><p><strong>Tip</strong>: <code>STORAGE_RESOURCE_ID</code> is the full ARM resource ID. Get it with <code>az storage account show -n YOUR-STORAGE -g YOUR-RG --query id -o tsv</code>.</p></blockquote></li>
+<li><pre><code class="language-powershell">python validate.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: <code>PASS OFFLINE: page metadata and permission strings present</code>.</p></blockquote></li>
+</ol>
+<h2 id="understand-the-five-objects-you-are-about-to-create">Understand the five objects you are about to create</h2>
+<p>Open <code>src/demo.py</code>. It creates five Search objects plus a blob container. Read them before running, because the relationships matter more than the syntax.</p>
+<ol>
+<li><p><strong>The index</strong> defines the target schema, including the vector field and its profile:</p>
+<pre><code class="language-python">SearchField(name=&#x27;content_vector&#x27;,
+            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+            searchable=True,
+            vector_search_dimensions=1536,
+            vector_search_profile_name=&#x27;vectors&#x27;)
+</code></pre>
+<p>The index also declares an <code>AzureOpenAIVectorizer</code>, which is what lets you later search with plain text and have Search embed the query for you.</p></li>
+<li><p><strong>The data source</strong> points at the blob container using a resource ID rather than a key:</p>
+<pre><code class="language-python">connection_string=&#x27;ResourceId=&#x27; + os.environ[&#x27;STORAGE_RESOURCE_ID&#x27;] + &#x27;;&#x27;
+</code></pre>
+<blockquote><p><strong>Note</strong>: That <code>ResourceId=</code> form tells Search to authenticate with its managed identity. There is no account key anywhere in this exercise.</p></blockquote></li>
+<li><p><strong>The Text Split skill</strong> produces chunks from each document&#x27;s text:</p>
+<pre><code class="language-python">SplitSkill(context=&#x27;/document&#x27;, text_split_mode=&#x27;pages&#x27;,
+           maximum_page_length=1000, page_overlap_length=100,
+           inputs=[InputFieldMappingEntry(name=&#x27;text&#x27;, source=&#x27;/document/content&#x27;)],
+           outputs=[OutputFieldMappingEntry(name=&#x27;textItems&#x27;, target_name=&#x27;chunks&#x27;)])
+</code></pre>
+<blockquote class="warn"><p><strong>Caution</strong>: <code>text_split_mode=&#x27;pages&#x27;</code> does <strong>not</strong> mean physical PDF pages. It means text windows. This is a genuinely confusing piece of naming, and it is why this lab carries the real page number as a separate field.</p></blockquote></li>
+<li><p><strong>The embedding skill</strong> runs over each chunk, generating vectors inside the pipeline:</p>
+<pre><code class="language-python">AzureOpenAIEmbeddingSkill(context=&#x27;/document/chunks/*&#x27;, dimensions=1536, **embedding,
+    inputs=[InputFieldMappingEntry(name=&#x27;text&#x27;, source=&#x27;/document/chunks/*&#x27;)],
+    outputs=[OutputFieldMappingEntry(name=&#x27;embedding&#x27;, target_name=&#x27;vector&#x27;)])
+</code></pre>
+<p>The <code>/document/chunks/*</code> context is what makes this run once per chunk rather than once per document.</p></li>
+<li><p><strong>Index projections</strong> write one index document per chunk and carry the parent&#x27;s metadata down:</p>
+<pre><code class="language-python">SearchIndexerIndexProjectionSelector(
+    target_index_name=name, parent_key_field_name=&#x27;parent_id&#x27;,
+    source_context=&#x27;/document/chunks/*&#x27;,
+    mappings=[InputFieldMappingEntry(name=&#x27;content&#x27;, source=&#x27;/document/chunks/*&#x27;),
+              InputFieldMappingEntry(name=&#x27;content_vector&#x27;, source=&#x27;/document/chunks/*/vector&#x27;),
+              InputFieldMappingEntry(name=&#x27;source&#x27;, source=&#x27;/document/source&#x27;),
+              InputFieldMappingEntry(name=&#x27;page&#x27;, source=&#x27;/document/page&#x27;),
+              InputFieldMappingEntry(name=&#x27;allowed_groups&#x27;, source=&#x27;/document/allowed_groups&#x27;)])
+</code></pre>
+<p>This is the step that keeps citation and permission data attached to each chunk. <code>skipIndexingParentDocuments</code> means only chunks are indexed, not the whole parent.</p></li>
+</ol>
+<h2 id="run-the-pipeline-and-inspect-execution">Run the pipeline and inspect execution</h2>
+<ol>
+<li><p>Create everything. The script uploads each record from <code>data/chunks.json</code> as a JSON blob, then creates the index, data source, skillset and indexer:</p>
+<pre><code class="language-powershell">python src/demo.py
+</code></pre>
+<p>The indexer starts automatically when it is created.</p></li>
+<li><p>Wait, then check that the run actually succeeded:</p>
+<pre><code class="language-powershell">python validate.py --live
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: <code>PASS LIVE: indexer succeeded and index contains documents</code>. The validator asserts status <code>success</code>, zero errors <strong>and</strong> zero failed items — a partially failed indexer run is a failure.</p></blockquote>
+<blockquote><p><strong>Tip</strong>: If it fails, read the indexer&#x27;s execution history in the portal. The error is almost always a missing role on the <em>Search service&#x27;s</em> managed identity.</p></blockquote></li>
+<li><p>Query the index with hybrid search and semantic reranking:</p>
+<pre><code class="language-powershell">python src/query.py
+</code></pre>
+<pre><code class="language-python">results = client.search(
+    search_text=question,
+    vector_queries=[VectorizableTextQuery(text=question, fields=&#x27;content_vector&#x27;,
+                                          k_nearest_neighbors=50)],
+    query_type=&#x27;semantic&#x27;,
+    semantic_configuration_name=&#x27;semantic&#x27;,
+    select=[&#x27;content&#x27;, &#x27;source&#x27;, &#x27;page&#x27;, &#x27;allowed_groups&#x27;],
+    top=3)
+</code></pre></li>
+<li><p>Three things are happening in that one call, and it is worth naming them separately:</p>
+<ul><li><code>search_text</code> runs keyword (BM25) retrieval.</li><li><code>vector_queries</code> runs vector similarity — and because the index has a vectorizer, Search embeds your query text itself, using its own managed identity.</li><li><code>query_type=&#x27;semantic&#x27;</code> reranks the combined candidate set with a semantic reranker.</li></ul>
+<p>Confirm the returned results carry <code>source</code>, <code>page</code> and <code>allowed_groups</code>. Those fields survived the whole managed pipeline, which is exactly what you configured the projections to do.</p></li>
+<li><p>Re-run the indexer after changing input:</p>
+<pre><code class="language-powershell">python src/query.py --run-indexer
+</code></pre></li>
+</ol>
+<h2 id="compare-managed-and-custom-ingestion">Compare managed and custom ingestion</h2>
+<p>You now have one managed pipeline. Exercise 18 builds the same capability in visible Python. Note the trade-offs while this one is fresh.</p>
+<table><thead><tr><th></th><th>Managed indexer (this exercise)</th><th>Custom pipeline (Exercise 18)</th></tr></thead><tbody><tr><td>Chunking</td><td>Configured in the skillset</td><td>Your own code, inspectable and testable</td></tr><tr><td>Embedding</td><td>Runs inside the pipeline under the Search identity</td><td>Explicit call you make and can measure</td></tr><tr><td>Scheduling and change detection</td><td>Built in</td><td>You build a manifest and checkpoint</td></tr><tr><td>Debugging</td><td>Indexer execution history</td><td>Ordinary Python, every intermediate visible</td></tr><tr><td>Best for</td><td>Standard documents in a supported store</td><td>Unusual sources or bespoke logic</td></tr></tbody></table>
+<ol>
+<li><p>Optionally, feed your <strong>real</strong> Exercise 06 extraction into this managed pipeline. Back up this lab&#x27;s <code>data/chunks.json</code>, copy Exercise 06&#x27;s version over it, use a fresh resource name, and re-run. The field names are compatible.</p>
+<blockquote><p><strong>Note</strong>: Watch what happens: the skillset will split your already-small chunks again. That double-split boundary is a real design consideration, not a bug — it is why you normally pass full extracted pages to a managed skillset, not pre-made chunks.</p></blockquote></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Who generates the vectors at index time in this pipeline?</summary><ul><li>A. The browser</li><li>B. The embedding skill, running under the Search identity</li><li>C. Your Python process</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>That is the defining feature of integrated vectorization, and it is why the Search service needs Cognitive Services OpenAI User.</p></div></details>
+<details class="kc"><summary>2. What carries the original PDF page number onto each chunk?</summary><ul><li>A. The index projection field mapping</li><li>B. The HNSW algorithm</li><li>C. The semantic reranker</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p><code>SplitSkill</code>&#x27;s &#x27;pages&#x27; are text windows, not physical pages. The real page is carried through explicitly as a projected field.</p></div></details>
+<details class="kc"><summary>3. Which identity reads the blobs for indexing?</summary><ul><li>A. The signed-in end user</li><li>B. The chat model</li><li>C. The Search service&#x27;s managed identity</li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>The <code>ResourceId=</code> connection form selects managed identity, so no storage key is used.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You built a complete managed ingestion pipeline — Blob data source, Text Split skill, embedding skill, index projections and indexer — and queried it with hybrid retrieval plus semantic reranking.</p>
+<p>You also kept citation and permission metadata attached through every stage, which is what makes Exercise 08&#x27;s security filtering possible on top of this index.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>This exercise creates billable Search and Storage objects. Clean-up is important.</p>
+<pre><code class="language-powershell">python cleanup.py
+</code></pre>
+<p>It asks you to confirm, then deletes <strong>only</strong> the objects whose names begin with <code>acme-lab07-demo-</code>: the indexer, skillset, data source, index and blob container. It asserts that prefix before deleting anything, so it cannot remove a shared index.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: The Search service, storage account and Azure OpenAI resource themselves are shared prerequisites and are deliberately left in place.</p></blockquote>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/search/vector-search-integrated-vectorization">Integrated vectorization</a></li><li><a href="https://learn.microsoft.com/azure/search/hybrid-search-overview">Hybrid search</a></li><li><a href="https://learn.microsoft.com/azure/search/semantic-search-overview">Semantic ranking</a></li></ul>
+<div class="pager"><a href="06-document-intelligence.html">&#8592; Extract documents with Document Intelligence</a><a href="08-secure-rag.html">Security-trimmed retrieval &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", "contentVersion":"1.0.0.0",
+ "parameters": {
+ "environmentName":{"value":"${AZURE_ENV_NAME}"}, "location":{"value":"${AZURE_LOCATION}"},
+ "apiClientId":{"value":"${ENTRA_API_CLIENT_ID}"}, "spaClientId":{"value":"${ENTRA_SPA_CLIENT_ID}"},
+ "modelName":{"value":"${MODEL_NAME}"}, "modelVersion":{"value":"${MODEL_VERSION}"},
+ "modelSku":{"value":"${MODEL_SKU}"}
+ }}

@@ -1,0 +1,5 @@
+// Replace the value with data/trace-id.txt in the Application Insights Logs view.
+union requests, dependencies, traces
+| where operation_Id == '<trace-id>'
+| project timestamp, operation_Id, operation_ParentId, itemType, name=column_ifexists('name', ''), message=column_ifexists('message', '')
+| order by timestamp asc

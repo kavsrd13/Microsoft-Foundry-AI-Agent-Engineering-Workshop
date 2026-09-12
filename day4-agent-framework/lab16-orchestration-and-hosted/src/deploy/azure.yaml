@@ -1,0 +1,41 @@
+# Based on microsoft-foundry/foundry-samples/.../responses/01-basic/azure.yaml
+requiredVersions:
+  azd: '>=1.27.1'
+  extensions:
+    azure.ai.agents: '>=1.0.0-beta.9'
+name: acme-lab16-hosted
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+        model:
+          format: OpenAI
+          name: ${AZURE_AI_MODEL_NAME}
+          version: ${AZURE_AI_MODEL_VERSION}
+        sku:
+          name: ${AZURE_AI_MODEL_SKU}
+          capacity: 10
+  assistant:
+    host: azure.ai.agent
+    project: agent
+    language: python
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+    uses:
+      - ai-project
+    kind: hosted
+    name: acme-lab16-assistant
+    description: Synthetic public service teaching assistant.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    env:
+      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+    container:
+      resources:
+        cpu: '0.5'
+        memory: 1Gi
+infra:
+  provider: microsoft.foundry

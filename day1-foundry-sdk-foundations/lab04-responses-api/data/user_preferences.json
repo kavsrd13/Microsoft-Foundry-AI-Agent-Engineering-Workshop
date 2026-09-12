@@ -1,0 +1,54 @@
+[
+  {
+    "user_id": "user-001",
+    "display_name": "Olivia Wilson",
+    "groups": [
+      "citizen-service"
+    ],
+    "language": "Australian English",
+    "tone": "concise",
+    "preferred_channel": "email"
+  },
+  {
+    "user_id": "user-002",
+    "display_name": "Noah Nguyen",
+    "groups": [
+      "citizen-service",
+      "hr-internal"
+    ],
+    "language": "Australian English",
+    "tone": "friendly",
+    "preferred_channel": "email"
+  },
+  {
+    "user_id": "user-003",
+    "display_name": "Amelia Patel",
+    "groups": [
+      "citizen-service"
+    ],
+    "language": "Australian English",
+    "tone": "concise",
+    "preferred_channel": "email"
+  },
+  {
+    "user_id": "user-004",
+    "display_name": "Jack Williams",
+    "groups": [
+      "citizen-service",
+      "hr-internal"
+    ],
+    "language": "Australian English",
+    "tone": "friendly",
+    "preferred_channel": "email"
+  },
+  {
+    "user_id": "user-005",
+    "display_name": "Charlotte Brown",
+    "groups": [
+      "citizen-service"
+    ],
+    "language": "Australian English",
+    "tone": "concise",
+    "preferred_channel": "email"
+  }
+]

@@ -1,0 +1,1 @@
+{"test_cases":["missing bearer -> 401", "forged X-MS-CLIENT-PRINCIPAL -> 401", "expired token -> 401", "wrong audience -> 401", "user A cannot retrieve user B record", "group overage -> 403"]}

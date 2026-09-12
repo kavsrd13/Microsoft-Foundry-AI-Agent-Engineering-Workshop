@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Persist a conversation across processes and inject per-user context | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#set-up-and-read-the-profiles">Set up and read the profiles</a></li><li><a href="#inject-per-user-context">Inject per-user context</a></li><li><a href="#persist-and-restore-a-conversation">Persist and restore a conversation</a></li><li><a href="#recognise-what-is-missing">Recognise what is missing</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Persist a conversation across processes and inject per-user context</h1>
+<p>This exercise covers the framework half of the client&#x27;s memory question: <strong>short-term</strong> conversation history that survives a save and restore, and <strong>long-term</strong> per-user preferences injected at run time.</p>
+<p>Exercise 19 covers the other half — where that state actually lives in production, and why a partition key is not an authorisation control. Together they answer &#x27;what is remembered&#x27; and &#x27;where is it kept&#x27;.</p>
+<p>This exercise takes approximately <strong>45</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>day4-agent-framework/lab14-session-and-context</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: Day 4 environment; see the warning below</div></div>
+<div class="tags"><span class="tag alt">Agent Framework</span><span class="tag">Module 5</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Keep conversation history in an <code>AgentSession</code>.</li><li>Serialise a session to JSON and reconstruct it.</li><li>Inject per-user preferences with a <code>ContextProvider</code>.</li><li>Keep two users&#x27; conversations isolated from each other.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>A Foundry project and chat deployment, and the Day 4 environment.</li></ul>
+<blockquote class="warn"><p><strong>Caution</strong>: Day 4 uses a <strong>different and incompatible</strong> package set from Days 1-3. The pinned Foundry provider requires <code>azure-ai-projects</code> below 2.4, so these exercises pin <strong>2.3.0</strong> while Days 1-3 pin 2.6.0. Create a fresh virtual environment for each Day 4 exercise and never install a Day 1-3 requirements file into it.</p></blockquote>
+<h2 id="set-up-and-read-the-profiles">Set up and read the profiles</h2>
+<ol>
+<li><pre><code class="language-powershell">cd day4-agent-framework/lab14-session-and-context
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+az login
+</code></pre></li>
+<li><p>Set <code>PROJECT_ENDPOINT</code> and <code>MODEL_DEPLOYMENT_NAME</code>, then <code>python validate.py</code>.</p></li>
+<li><p>Open <code>data/user_preferences.json</code> and read the first two records. Each has a <code>user_id</code>, <code>language</code>, <code>tone</code> and <code>preferred_channel</code>.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: These are synthetic profiles, not authenticated identities. Nothing in this exercise verifies that the caller <em>is</em> the user whose profile it loads. That gap is the whole point of the last section.</p></blockquote></li>
+</ol>
+<h2 id="inject-per-user-context">Inject per-user context</h2>
+<p>Open <code>src/demo.py</code>. A <code>ContextProvider</code> is a hook that runs before each agent run and can contribute instructions.</p>
+<ol>
+<li><pre><code class="language-python">class Preferences(ContextProvider):
+    async def before_run(self, *, agent, session, context, state) -&gt; None:
+        profiles = json.loads((ROOT / &#x27;data/user_preferences.json&#x27;).read_text())
+        profile = next(p for p in profiles if p[&#x27;user_id&#x27;] == session.state[&#x27;user_id&#x27;])
+        context.extend_instructions(
+            self.source_id,
+            f&quot;Use {profile[&#x27;language&#x27;]} and a {profile[&#x27;tone&#x27;]} tone. &quot;
+            f&quot;Preferred channel: {profile[&#x27;preferred_channel&#x27;]}.&quot;)
+</code></pre></li>
+<li><p>Three things are worth noticing:</p>
+<ul><li>The user is chosen from <code>session.state[&#x27;user_id&#x27;]</code> — the session carries who this conversation belongs to.</li><li><code>context.extend_instructions(...)</code> <strong>adds</strong> to the agent&#x27;s instructions for this run rather than replacing them, so the agent&#x27;s base rules survive.</li><li>Only the one hook this lesson needs is implemented. A provider can do more, but a small provider is easier to reason about.</li></ul></li>
+<li><p>Two providers are registered on the agent:</p>
+<pre><code class="language-python">agent = Agent(client,
+    instructions=&#x27;Help with public services. Do not invent policy.&#x27;,
+    context_providers=[InMemoryHistoryProvider(), Preferences(&#x27;preferences&#x27;)],
+    default_options={&#x27;store&#x27;: False})
+</code></pre>
+<p><code>InMemoryHistoryProvider</code> is what puts the conversation messages into session state. Without it, each run would start blank.</p></li>
+</ol>
+<h2 id="persist-and-restore-a-conversation">Persist and restore a conversation</h2>
+<ol>
+<li><p>Run the demo:</p>
+<pre><code class="language-powershell">python src/demo.py
+</code></pre></li>
+<li><p>Follow the three runs it performs. First, a case reference is supplied and the session is written to disk:</p>
+<pre><code class="language-python">print((await agent.run(&#x27;My case reference is ACME-204. Please remember it.&#x27;,
+                       session=session)).text)
+(ROOT / &#x27;data/session.json&#x27;).write_text(json.dumps(session.to_dict(), indent=2))
+</code></pre></li>
+<li><p>Second, a <strong>new session object</strong> is reconstructed from that JSON and asked to recall it:</p>
+<pre><code class="language-python">restored = AgentSession.from_dict(json.loads((ROOT / &#x27;data/session.json&#x27;).read_text()))
+print((await agent.run(&#x27;What case reference did I give you?&#x27;, session=restored)).text)
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The restored session should answer ACME-204. It is a different Python object, rebuilt from serialised state — which is exactly what a web application does between requests.</p></blockquote></li>
+<li><p>Third, a <strong>different user&#x27;s</strong> session asks the same thing and must not know the reference:</p>
+<pre><code class="language-python">other = AgentSession()
+other.state[&#x27;user_id&#x27;] = profiles[1][&#x27;user_id&#x27;]
+print((await agent.run(&#x27;Introduce how you can help. Do you know my case reference?&#x27;,
+                       session=other)).text)
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The second user should not know ACME-204, and should answer in their own profile&#x27;s language and tone.</p></blockquote></li>
+<li><p>Open <code>data/session.json</code> and read it. You can see the conversation content in plain text.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: This is a small classroom file, not a session database. If real conversation content were stored this way it would need the same protection as any other record — encryption, access control, retention and a defined location. Exercise 19 provides the production answer.</p></blockquote></li>
+</ol>
+<h2 id="recognise-what-is-missing">Recognise what is missing</h2>
+<p>This exercise deliberately stops short of a safe design, and you should be able to name the gap.</p>
+<ol>
+<li><p>The user identity comes from <code>session.state[&#x27;user_id&#x27;]</code>, which the script simply sets. In a web application, a request-supplied user ID is <strong>not</strong> authorisation — anyone could send another user&#x27;s ID.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Derive the user identity from a validated sign-in, as Exercise 21 does, and use that verified value as the partition. Never take it from the request body.</p></blockquote></li>
+<li><p>The history here lives in memory and in one local JSON file. It does not survive across servers, does not expire, and has no per-user isolation beyond your own code. Exercise 19 adds a real store, a partition key derived from a token, and TTLs that distinguish a one-hour conversation from a one-day preference.</p></li>
+<li><p>Write down the three properties a production session store needs that this exercise lacks: trusted identity, durable shared storage, and a retention policy.</p></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. What preserves the conversational messages locally?</summary><ul><li>A. <code>InMemoryHistoryProvider</code> together with session state</li><li>B. The profile&#x27;s tone setting</li><li>C. The model deployment name</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>The history provider writes messages into the session; <code>to_dict()</code> then serialises them.</p></div></details>
+<details class="kc"><summary>2. Is a user ID taken from the incoming request trusted authorisation?</summary><ul><li>A. Yes</li><li>B. No</li><li>C. Only if it is short</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>It must be derived from a validated sign-in. Exercise 21 shows the verification that makes a claim trustworthy.</p></div></details>
+<details class="kc"><summary>3. How should two users&#x27; conversations be isolated?</summary><ul><li>A. Share all history and filter afterwards</li><li>B. Change only the prompt wording</li><li>C. Use separate sessions keyed by a verified identity</li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>Isolation must be structural. Filtering after the fact means the data was already loaded.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You kept a conversation in an <code>AgentSession</code>, serialised it to JSON, restored it into a new object and confirmed recall, injected per-user preferences with a <code>ContextProvider</code>, and kept a second user&#x27;s session isolated.</p>
+<p>You also named what this design lacks for production — trusted identity, durable storage and retention — which is exactly what Exercise 19 supplies.</p>
+<h2 id="clean-up">Clean up</h2>
+<pre><code class="language-powershell">python cleanup.py
+</code></pre>
+<p>No Azure resources are created; <code>store=False</code> keeps model history local. Clean-up removes <code>data/session.json</code>, which contains synthetic conversation content.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/agent-framework/concepts/agents/conversations/context-providers">Context providers</a></li></ul>
+<div class="pager"><a href="13-maf-transition.html">&#8592; Foundry SDK compared with Agent Framework</a><a href="15-middleware.html">Middleware and short-circuiting &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

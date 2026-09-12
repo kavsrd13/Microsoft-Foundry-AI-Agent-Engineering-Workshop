@@ -1,0 +1,12 @@
+.venv/
+.env
+.env.*
+local.settings.json
+__pycache__/
+*.pyc
+src/
+validate.py
+validate_http.py
+cleanup.py
+README.md
+data/evidence.md

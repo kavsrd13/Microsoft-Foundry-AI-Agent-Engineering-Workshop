@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Connect an MCP server and approve every tool call explicitly | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#set-up">Set up</a></li><li><a href="#read-the-five-fields-that-define-the-connection">Read the five fields that define the connection</a></li><li><a href="#deny-a-call-then-approve-one">Deny a call, then approve one</a></li><li><a href="#think-about-the-egress-decision">Think about the egress decision</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Connect an MCP server and approve every tool call explicitly</h1>
+<p>The Model Context Protocol lets an agent discover and call tools hosted by a separate server. In this exercise you attach the public Microsoft Learn MCP server to a Responses request and run the approval loop.</p>
+<p>The emphasis is on control. You will restrict the agent to one named tool, require approval for every call, <strong>deny</strong> the first request to prove denial works, and only then approve one. An MCP tool call sends your query to a third-party server, which is a data-egress decision and deserves to be treated as one.</p>
+<p>This exercise takes approximately <strong>45</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>day3-foundry-sdk-enterprise/lab10-mcp-tools</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>azure-ai-projects==2.6.0</code>; no extra packages</div></div>
+<div class="tags"><span class="tag alt">Foundry SDK</span><span class="tag">Module 6</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Attach an MCP server to a Responses request and restrict the allowed tools.</li><li>Require and handle explicit approval for each tool invocation.</li><li>Deny a call and confirm it does not execute.</li><li>Correlate an approval decision with its request.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>A Foundry project and a working chat deployment.</li><li>Outbound network access from the service to <code>learn.microsoft.com</code>.</li></ul>
+<h2 id="set-up">Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd day3-foundry-sdk-enterprise/lab10-mcp-tools
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+az login
+</code></pre></li>
+<li><p>Fill in <code>PROJECT_ENDPOINT</code> and <code>MODEL_DEPLOYMENT_NAME</code>, then:</p>
+<pre><code class="language-powershell">python validate.py
+</code></pre></li>
+</ol>
+<h2 id="read-the-five-fields-that-define-the-connection">Read the five fields that define the connection</h2>
+<p>Open <code>src/demo.py</code>. The entire MCP configuration is one dictionary, and every key in it is a control.</p>
+<ol>
+<li><pre><code class="language-python">tools = [{&#x27;type&#x27;: &#x27;mcp&#x27;,
+          &#x27;server_label&#x27;: &#x27;microsoft_learn&#x27;,
+          &#x27;server_url&#x27;: &#x27;https://learn.microsoft.com/api/mcp&#x27;,
+          &#x27;allowed_tools&#x27;: [&#x27;microsoft_docs_search&#x27;],
+          &#x27;require_approval&#x27;: &#x27;always&#x27;}]
+</code></pre></li>
+<li><ul><li><code>type: &#x27;mcp&#x27;</code> — this is a hosted tool the service connects to, not a function your application executes.</li><li><code>server_url</code> — a fixed, known endpoint. It is not discovered at runtime and not model-supplied.</li><li><code>server_label</code> — the name used in approval requests, so you can tell servers apart.</li><li><code>allowed_tools</code> — an allowlist. The server may offer many tools; this request permits exactly one.</li><li><code>require_approval: &#x27;always&#x27;</code> — nothing executes without your explicit decision.</li></ul>
+<blockquote><p><strong>Note</strong>: Two independent controls are at work: the allowlist bounds <em>what could</em> be called, and approval governs <em>whether it is</em>. Relying on only one of them is weaker than it looks.</p></blockquote></li>
+</ol>
+<h2 id="deny-a-call-then-approve-one">Deny a call, then approve one</h2>
+<ol>
+<li><p>Run the demo:</p>
+<pre><code class="language-powershell">python src/demo.py
+</code></pre></li>
+<li><p>You will be shown the server label, the tool name and the arguments the model wants to send. Read the arguments — that text is what will leave your environment.</p>
+<pre><code class="language-python">while approvals := [item for item in response.output
+                   if item.type == &#x27;mcp_approval_request&#x27;]:
+    for item in approvals:
+        print(item.server_label, item.name, item.arguments)
+        permitted = (item.server_label == &#x27;microsoft_learn&#x27;
+                     and item.name == &#x27;microsoft_docs_search&#x27;)
+        approved = permitted and input(&#x27;Approve this public documentation query? [y/N] &#x27;).lower() == &#x27;y&#x27;
+</code></pre>
+<blockquote><p><strong>Tip</strong>: Note the belt-and-braces check: the application re-verifies the server and tool name itself before even offering you the prompt. It does not rely solely on the service having honoured <code>allowed_tools</code>.</p></blockquote></li>
+<li><p>**Type <code>n</code> on this first run.** The decision is returned with <code>approve: False</code> and the tool does not execute. Confirm from the final answer that no documentation content was used.</p>
+<blockquote class="ok"><p><strong>Check</strong>: A denied call must produce no tool result. If it did, the control would be decorative.</p></blockquote></li>
+<li><p>Run it again and type <code>y</code> this time. The continuation sends the decision correlated by <code>approval_request_id</code>:</p>
+<pre><code class="language-python">decisions.append({&#x27;type&#x27;: &#x27;mcp_approval_response&#x27;,
+                  &#x27;approval_request_id&#x27;: item.id,
+                  &#x27;approve&#x27;: approved})
+</code></pre>
+<p>Just as <code>call_id</code> correlated function results in Exercise 05, <code>approval_request_id</code> is what ties a decision to the specific request it answers.</p></li>
+<li><p>Compare the two answers. The approved run should cite documentation content; the denied run should not. The real output is saved to <code>data/live-output.txt</code>.</p></li>
+<li><p>Note that the loop is a <code>while</code>, not an <code>if</code>. A single turn can produce several approval rounds, and the loop never auto-approves a later one just because you approved the first.</p></li>
+</ol>
+<h2 id="think-about-the-egress-decision">Think about the egress decision</h2>
+<ol>
+<li><p>This tool is read-only, which feels safe. But consider the direction of the risk: the <em>query</em> travels outward. If a user&#x27;s question contained case details, approving the call would send those details to a third-party server.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: &#x27;Read-only&#x27; describes what the tool does to the remote system. It says nothing about what your data does on the way there.</p></blockquote></li>
+<li><p>List in your notes what you would require before allowing an MCP server in production: a known and reviewed endpoint, an allowlist of tools, an approval or policy gate, a record of what was sent, and an assessment of where that data lands.</p></li>
+<li><p>Exercise 20 builds the other half of this picture: your own MCP <strong>server</strong>, hosted locally, wrapping an authenticated internal tool.</p></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. What happens before an allowed MCP call executes in this exercise?</summary><ul><li>A. Automatic consent</li><li>B. Explicit approval</li><li>C. A new role assignment</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p><code>require_approval: &#x27;always&#x27;</code> means each invocation waits for a decision you make.</p></div></details>
+<details class="kc"><summary>2. Can a read-only tool still disclose data?</summary><ul><li>A. Yes — the query itself is sent to the server</li><li>B. No, reads are always safe</li><li>C. Only if an API key is used</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>Egress is about what you send, not only what you receive.</p></div></details>
+<details class="kc"><summary>3. What links an approval decision to the request it answers?</summary><ul><li>A. The deployment name</li><li>B. The order of the decisions</li><li>C. <code>approval_request_id</code></li></ul><div class="ans"><p><strong>Answer: C</strong></p><p>The same correlation pattern as <code>call_id</code> in Exercise 05.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You attached a remote MCP server to a Responses request, restricted it to a single allowed tool, required approval for every call, denied one invocation to prove denial works, and approved another.</p>
+<p>You also identified the real risk in a read-only tool: the outbound query. Exercise 20 has you host an MCP server of your own in front of an authenticated internal API.</p>
+<h2 id="clean-up">Clean up</h2>
+<pre><code class="language-powershell">python cleanup.py
+</code></pre>
+<p>This exercise creates no Azure resources. Clean-up removes local output files. Review <code>data/live-output.txt</code> and <code>data/response-ids.json</code> before keeping or deleting them.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol">MCP tools in Foundry</a></li></ul>
+<div class="pager"><a href="09-foundry-iq.html">&#8592; Foundry IQ knowledge retrieval</a><a href="11-evaluation.html">Evaluate answers with judges and a rubric &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

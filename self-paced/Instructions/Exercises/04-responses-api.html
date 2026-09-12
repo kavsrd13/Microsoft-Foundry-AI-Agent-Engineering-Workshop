@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Call models directly with the Responses API, conversations and streaming | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#set-up">Set up</a></li><li><a href="#carry-context-across-two-turns">Carry context across two turns</a></li><li><a href="#stream-the-response">Stream the response</a></li><li><a href="#choose-between-an-agent-and-a-direct-call">Choose between an agent and a direct call</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Call models directly with the Responses API, conversations and streaming</h1>
+<p>Exercise 03 stored a definition on the server. This exercise does the opposite: the application keeps the instructions and names the model on every call, using the OpenAI-compatible <strong>Responses API</strong>.</p>
+<p>Both styles are valid, and the choice has real consequences for versioning, evaluation and clean-up. You will also meet two mechanics that reappear throughout the workshop: a server-side <em>conversation</em> that carries context between turns, and <em>streaming</em>, which Exercise 21 turns into a live chat UI.</p>
+<p>This exercise takes approximately <strong>45</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>day1-foundry-sdk-foundations/lab04-responses-api</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>azure-ai-projects==2.6.0</code></div></div>
+<div class="tags"><span class="tag alt">Foundry SDK</span><span class="tag">Module 2</span><span class="tag">Module 3</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Call a model without creating any agent resource.</li><li>Reuse a conversation across two turns and observe recall.</li><li>Print incremental text as it is generated.</li><li>Choose between a stored agent definition and application-supplied instructions.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>A Foundry project and a working chat deployment, as in Exercise 01.</li></ul>
+<h2 id="set-up">Set up</h2>
+<ol>
+<li><pre><code class="language-powershell">cd day1-foundry-sdk-foundations/lab04-responses-api
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+az login
+</code></pre></li>
+<li><p>Fill in <code>.env</code>, then run the offline check:</p>
+<pre><code class="language-powershell">python validate.py
+</code></pre></li>
+</ol>
+<h2 id="carry-context-across-two-turns">Carry context across two turns</h2>
+<p>Open <code>src/main.py</code>. Unlike Exercise 03, <code>get_openai_client()</code> is called with no agent name, so every request must state its own model and instructions.</p>
+<ol>
+<li><p>A conversation is created as a <strong>server-side resource</strong> and its ID is recorded locally:</p>
+<pre><code class="language-python">conversation = client.conversations.create()
+state[&quot;conversations&quot;].append(conversation.id)
+state_file.write_text(json.dumps(state))
+</code></pre>
+<blockquote><p><strong>Note</strong>: This is why the exercise has a clean-up step even though it creates no agent. &#x27;No agent&#x27; does not mean &#x27;nothing persisted&#x27;.</p></blockquote></li>
+<li><p>Two questions are then sent against that same conversation ID:</p>
+<pre><code class="language-python">for question in [&quot;Our synthetic workshop is in Sydney. Remember this location.&quot;,
+                 &quot;Which city is our workshop in?&quot;]:
+    response = client.responses.create(
+        model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+        instructions=&quot;Answer briefly in Australian English.&quot;,
+        conversation=conversation.id,
+        input=question,
+    )
+</code></pre></li>
+<li><p>Run it:</p>
+<pre><code class="language-powershell">python src/main.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The second answer should mention Sydney, even though the second request never repeats it.</p></blockquote></li>
+<li><p>Now prove where that memory lives. Edit the script to remove the <code>conversation=conversation.id</code> argument from both calls, and run again. The second answer can no longer name the city. Restore the argument afterwards.</p>
+<blockquote><p><strong>Tip</strong>: The model has no memory of its own. The conversation resource is what carries state, which is exactly why Exercise 19 has to make a deliberate decision about where conversation state is stored for a real application.</p></blockquote></li>
+</ol>
+<h2 id="stream-the-response">Stream the response</h2>
+<ol>
+<li><p>Open <code>src/stream.py</code>. The only differences are <code>stream=True</code> and a loop that filters events:</p>
+<pre><code class="language-python">with client.responses.create(model=os.environ[&quot;MODEL_DEPLOYMENT&quot;],
+                             input=&quot;Explain tool calling in two sentences.&quot;,
+                             stream=True, store=False) as events:
+    for event in events:
+        if event.type == &quot;response.output_text.delta&quot;:
+            print(event.delta, end=&quot;&quot;, flush=True)
+</code></pre></li>
+<li><p>Run it and watch the text arrive progressively:</p>
+<pre><code class="language-powershell">python src/stream.py
+</code></pre></li>
+<li><p>A stream emits several event types — lifecycle events, content events and completion events. This example prints only <code>response.output_text.delta</code>. Temporarily remove the <code>if</code> and print <code>event.type</code> for every event to see the full sequence, then restore it.</p>
+<blockquote><p><strong>Note</strong>: Exercise 21 forwards these same deltas to a browser as server-sent events, and uses the completion event to know when the answer is finished. Seeing the raw event types here makes that code much easier to read.</p></blockquote></li>
+<li><p>Note that <code>stream.py</code> passes <code>store=False</code>, so this call leaves nothing behind.</p></li>
+</ol>
+<h2 id="choose-between-an-agent-and-a-direct-call">Choose between an agent and a direct call</h2>
+<p>You have now built the same capability two ways. The table below is the decision you will be asked to justify.</p>
+<table><thead><tr><th>Dimension</th><th>Prompt agent (Exercise 03)</th><th>Responses API (Exercise 04)</th></tr></thead><tbody><tr><td>Definition</td><td>Named, versioned server asset</td><td>Instructions live in application code</td></tr><tr><td>Inference call</td><td>Agent-bound client; no model argument</td><td>Explicit model and instructions each time</td></tr><tr><td>Memory</td><td>Explicit conversation, if used</td><td>Explicit conversation, if used</td></tr><tr><td>Versioning and rollback</td><td>Built in</td><td>Your own source control and release process</td></tr><tr><td>Clean-up</td><td>Agent versions, plus any conversations</td><td>Conversations only</td></tr></tbody></table>
+<ol>
+<li><p>Decide which you would use for a resident-facing assistant whose wording must be reviewed and approved before each change, and write down why.</p></li>
+<li><p>Decide which you would use for a short internal batch job that summarises documents once a night. The answers are usually different, and that is the point.</p></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. What allows the second turn to recall Sydney?</summary><ul><li>A. The conversation ID passed to both requests</li><li>B. The script&#x27;s filename</li><li>C. The model&#x27;s built-in memory</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p>Remove the <code>conversation</code> argument and recall disappears. The model is stateless; the conversation resource carries the context.</p></div></details>
+<details class="kc"><summary>2. Which streaming event carries incremental text?</summary><ul><li>A. <code>conversation.created</code></li><li>B. <code>response.output_text.delta</code></li><li>C. <code>deployment.deleted</code></li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>Other event types describe lifecycle and completion; only the delta events carry text fragments.</p></div></details>
+<details class="kc"><summary>3. This exercise creates no agent. Does that mean nothing is stored?</summary><ul><li>A. No — conversations are server resources and persist</li><li>B. Yes, always</li><li>C. Only outside Australia</li></ul><div class="ans"><p><strong>Answer: A</strong></p><p><code>main.py</code> creates conversations that outlive the process, which is why this exercise still has a clean-up step. <code>store=False</code> in <code>stream.py</code> is what avoids retaining a response.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You called a model directly through the Responses API, carried context across two turns with a server-side conversation, proved where that memory lives by removing it, and streamed text deltas.</p>
+<p>You also compared the stored-definition and application-supplied styles. Exercise 13 revisits exactly this comparison one level higher, between the Foundry SDK and the Microsoft Agent Framework.</p>
+<h2 id="clean-up">Clean up</h2>
+<pre><code class="language-powershell">python cleanup.py
+</code></pre>
+<p>Clean-up removes the conversations recorded in <code>data/resource-state.json</code>. Those are real server resources created by <code>main.py</code>, so run this even though the exercise created no agent.</p>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/foundry/agents/quickstarts/responses-api">Responses API quickstart</a></li><li><a href="https://learn.microsoft.com/azure/foundry/openai/how-to/responses">Responses streaming</a></li></ul>
+<div class="pager"><a href="03-prompt-agent.html">&#8592; Create a versioned prompt agent</a><a href="05-function-tools.html">Function calling and tool dispatch &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

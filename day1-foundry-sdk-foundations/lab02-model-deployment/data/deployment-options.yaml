@@ -1,0 +1,11 @@
+# Scenarios are teaching decisions, not claims of current capacity.
+scenarios:
+  - requirement: Australian processing required
+    candidate_type: Regional Standard
+    action: Verify the exact model/version supports australiaeast and organisation policy.
+  - requirement: Approved geographic data zone
+    candidate_type: DataZoneStandard
+    action: Verify the offered zone; never assume there is an Australian data zone.
+  - requirement: Global processing explicitly approved
+    candidate_type: GlobalStandard
+    action: Verify model availability and document the approved geography.

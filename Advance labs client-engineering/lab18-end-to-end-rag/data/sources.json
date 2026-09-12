@@ -1,0 +1,5 @@
+[
+  {"file": "acme-code-of-conduct.pdf", "allowed_groups": ["staff"]},
+  {"file": "acme-leave-policy.pdf", "allowed_groups": ["staff", "hr"]},
+  {"file": "acme-travel-policy.pdf", "allowed_groups": ["staff"]}
+]

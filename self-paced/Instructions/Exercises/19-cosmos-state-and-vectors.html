@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Persist agent state in Cosmos DB and query vectors alongside it | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul><li><a href="#before-you-start">Before you start</a></li><li><a href="#prepare-the-database-instructor">Prepare the database (instructor)</a></li><li><a href="#set-up-and-read-the-identity-model">Set up and read the identity model</a></li><li><a href="#prove-persistence-across-processes">Prove persistence across processes</a></li><li><a href="#test-the-isolation-boundary-honestly">Test the isolation boundary honestly</a></li><li><a href="#query-vectors-in-cosmos">Query vectors in Cosmos</a></li><li><a href="#inspect-the-service-owned-store-instructor-led">Inspect the service-owned store (instructor-led)</a></li><li><a href="#make-the-architecture-decision">Make the architecture decision</a></li><li><a href="#knowledge-check">Knowledge check</a></li><li><a href="#summary">Summary</a></li><li><a href="#clean-up">Clean up</a></li></ul></aside>
+<article>
+<h1 id="top">Persist agent state in Cosmos DB and query vectors alongside it</h1>
+<p>Exercise 14 kept a conversation in a session object and a local file. This exercise answers the production question: <strong>where does that state actually live</strong>, who can read it, and how long does it survive?</p>
+<p>You will persist state in Cosmos DB partitioned by a <em>token-derived</em> identity, prove recovery in a separate process, apply different TTLs to short- and long-term memory, run a vector query against application data, and inspect the service-owned <code>enterprise_memory</code> database read-only.</p>
+<p>This exercise takes approximately <strong>120</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: Some of the technologies used in this exercise are in preview or in
+active development. You may experience some unexpected behavior, warnings, or errors. All data used in this
+exercise is synthetic; do not substitute real records.</p></blockquote>
+<div class="meta"><div><strong>Lab folder</strong>: <code>Advance labs client-engineering/lab19-cosmos-state-and-vectors</code></div><div><strong>Run scripts from</strong>: the lab folder (not from <code>src</code>)</div><div><strong>Environment</strong>: <code>azure-cosmos==4.17.0</code>, <code>openai==2.54.0</code> — note the different OpenAI pin</div></div>
+<div class="tags"><span class="tag alt">Advanced</span><span class="tag">Module 5</span></div>
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul><li>Derive a partition key from an SDK-acquired token rather than a request parameter.</li><li>Save and recover conversation state across two separate processes.</li><li>Distinguish short-term and long-term memory with TTL.</li><li>Run a vector similarity query in Cosmos DB.</li><li>Inspect <code>enterprise_memory</code> metadata safely, and reconcile RU/s requirements.</li><li>Decide when Cosmos is the right vector store and when Azure AI Search is.</li></ul>
+<h3>Prerequisites</h3>
+<ul><li>A Cosmos DB for NoSQL account with vector search enabled, in an approved region.</li><li><strong>Cosmos DB Built-in Data Contributor</strong> at <code>/dbs/workshop-memory</code>. Subscription Contributor is a control-plane role and does <strong>not</strong> grant data access.</li><li><strong>Cognitive Services OpenAI User</strong> on the embedding resource.</li><li>Firewall or private endpoint routing that reaches your machine.</li></ul>
+<table><thead><tr><th>Store</th><th>Holds</th><th>Owned by</th></tr></thead><tbody><tr><td>Blob Storage</td><td>Original files and extraction inputs</td><td>The ingestion application</td></tr><tr><td>Azure AI Search</td><td>Chunks, searchable fields, embeddings, access metadata</td><td>The retrieval application</td></tr><tr><td>Cosmos <code>enterprise_memory</code></td><td>Service-managed agent state in a standard BYO setup</td><td>The Foundry runtime</td></tr><tr><td>Cosmos <code>workshop-memory</code></td><td>This exercise&#x27;s conversation, preferences and vectors</td><td>Your application</td></tr></tbody></table>
+<blockquote class="warn"><p><strong>Caution</strong>: Never create, edit, delete or impose TTL on the service-owned <code>enterprise_memory</code> containers. This exercise only ever reads their metadata.</p></blockquote>
+<h2 id="prepare-the-database-instructor">Prepare the database (instructor)</h2>
+<p>These commands create billable resources. Run them once per classroom, not per learner.</p>
+<ol>
+<li><pre><code class="language-powershell">$rg = &#x27;YOUR-RESOURCE-GROUP&#x27;
+$account = &#x27;YOUR-COSMOS-ACCOUNT&#x27;
+az cosmosdb sql database create -g $rg -a $account -n workshop-memory
+az cosmosdb sql container create -g $rg -a $account -d workshop-memory -n sessions `
+  --partition-key-path /userId --ttl -1
+az cosmosdb sql container create -g $rg -a $account -d workshop-memory -n vectors `
+  --partition-key-path /userId --vector-embeddings &#x27;@data/vector-policy.json&#x27; --idx &#x27;@data/index-policy.json&#x27;
+</code></pre></li>
+<li><p><code>--ttl -1</code> enables <em>item-level</em> TTL with no default expiry, so each document decides its own lifetime. The scripts then set TTL per item.</p></li>
+<li><p>Open <code>data/vector-policy.json</code> and <code>data/index-policy.json</code>. The policy uses <strong>256 dimensions</strong> with cosine distance and a <code>flat</code> index.</p>
+<blockquote><p><strong>Note</strong>: 256 fits within the flat index&#x27;s dimension limit, and these are genuine shortened <code>text-embedding-3-small</code> embeddings. For large collections, compare <code>quantizedFlat</code> or DiskANN against representative data — not against three records.</p></blockquote></li>
+</ol>
+<h2 id="set-up-and-read-the-identity-model">Set up and read the identity model</h2>
+<ol>
+<li><pre><code class="language-powershell">cd &quot;Advance labs client-engineering/lab19-cosmos-state-and-vectors&quot;
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+az login
+python validate.py
+</code></pre></li>
+<li><pre><code class="language-text">COSMOS_ENDPOINT=https://YOUR-ACCOUNT.documents.azure.com:443/
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai/v1/
+EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
+</code></pre>
+<blockquote><p><strong>Tip</strong>: This exercise uses <code>AZURE_OPENAI_BASE_URL</code> — including the <code>/openai/v1/</code> path — and <code>EMBEDDING_DEPLOYMENT_NAME</code>. Both differ from Exercise 18. Always copy this exercise&#x27;s own <code>.env.example</code>.</p></blockquote></li>
+<li><p>Open <code>src/store.py</code>. The partition key is derived from a token the SDK acquired directly:</p>
+<pre><code class="language-python">def signed_in_partition():
+    token = credential.get_token(&#x27;https://cosmos.azure.com/.default&#x27;).token
+    payload = token.split(&#x27;.&#x27;)[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + &#x27;=&#x27; * (-len(payload) % 4)))
+    return claims[&#x27;tid&#x27;] + &#x27;:&#x27; + claims[&#x27;oid&#x27;]
+</code></pre>
+<blockquote class="warn"><p><strong>Caution</strong>: Read the comment in the source carefully. This decodes a token <strong>the credential just obtained from Entra</strong>, so its contents are trustworthy here. It is emphatically <strong>not</strong> a validator for incoming web requests. A web API must validate signature, issuer, audience and lifetime in middleware first — as Exercise 21 does — and use that validated principal.</p></blockquote></li>
+<li><p>Note that the partition is <code>tenant:object-id</code>, so identities from different tenants can never collide.</p></li>
+</ol>
+<h2 id="prove-persistence-across-processes">Prove persistence across processes</h2>
+<ol>
+<li><p>Save state, then <strong>let the process exit</strong>:</p>
+<pre><code class="language-powershell">python src/save.py
+</code></pre>
+<pre><code class="language-python">state.upsert_item({&#x27;id&#x27;:&#x27;session-1&#x27;, &#x27;userId&#x27;:user, &#x27;ttl&#x27;:3600,
+                   &#x27;messages&#x27;:[{&#x27;role&#x27;:&#x27;user&#x27;,&#x27;content&#x27;:&#x27;My synthetic case is ACME-204.&#x27;}]})
+state.upsert_item({&#x27;id&#x27;:&#x27;preferences&#x27;, &#x27;userId&#x27;:user, &#x27;ttl&#x27;:86400,
+                   &#x27;language&#x27;:&#x27;English&#x27;, &#x27;style&#x27;:&#x27;short answers&#x27;})
+</code></pre></li>
+<li><p>Now recover it in a <strong>completely new process</strong>:</p>
+<pre><code class="language-powershell">python src/read.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: ACME-204 and the preference come back. Nothing was held in memory between the two commands — this is real durable state, unlike Exercise 14&#x27;s in-process session.</p></blockquote></li>
+<li><p>Notice the two different TTLs, which is the short- versus long-term memory distinction made concrete:</p>
+<table><thead><tr><th>Item</th><th>TTL</th><th>Meaning</th></tr></thead><tbody><tr><td><code>session-1</code></td><td>3,600 s</td><td>Short-term: this conversation, valid for an hour</td></tr><tr><td><code>preferences</code></td><td>86,400 s</td><td>Long-term: how this person likes to be answered, for a day</td></tr></tbody></table></li>
+<li><p>Prove TTL actually expires things. Change the session TTL in <code>save.py</code> to <code>30</code>, run it, wait at least 30 seconds, then run <code>read.py</code>.</p>
+<blockquote class="ok"><p><strong>Check</strong>: The session should be gone while the preference remains. There is no <code>try/except</code> hiding the expected not-found error — you are meant to see it.</p></blockquote>
+<p>Restore <code>3600</code> afterwards.</p></li>
+<li><p>Open the items in Data Explorer and inspect <code>_ts</code> and <code>ttl</code>. Capture the <strong>request charge</strong> from Query Stats for a point read, then for a query, and compare them.</p>
+<blockquote><p><strong>Note</strong>: A point read needs both <code>id</code> and partition key and is the cheapest operation. A cross-partition query is the most expensive. This is the RU cost model in one comparison.</p></blockquote></li>
+</ol>
+<h2 id="test-the-isolation-boundary-honestly">Test the isolation boundary honestly</h2>
+<ol>
+<li><p>Sign in as a <strong>different</strong> identity with its own permitted access and run <code>read.py</code> <em>before</em> saving anything.</p>
+<blockquote class="ok"><p><strong>Check</strong>: No session exists in that identity&#x27;s partition. Then run <code>save.py</code> as that identity and confirm it now has its own.</p></blockquote></li>
+<li><p>Now state the limitation precisely, because this is the point most often got wrong:</p>
+<blockquote class="warn"><p><strong>Caution</strong>: <strong>A partition key improves routing; it is not row-level access control.</strong> A principal holding database-wide contributor access can query any partition. Isolation here is enforced by the trusted application choosing the right partition, not by the database refusing the request.</p></blockquote></li>
+<li><p>It follows that production end users must never receive that database role or direct database credentials. The application holds the data-plane role; the user authenticates to the application. Exercise 21 shows that shape.</p></li>
+</ol>
+<h2 id="query-vectors-in-cosmos">Query vectors in Cosmos</h2>
+<ol>
+<li><pre><code class="language-powershell">python src/vectors.py
+</code></pre>
+<p>Three synthetic records are embedded at 256 dimensions and upserted, then queried:</p>
+<pre><code class="language-sql">SELECT TOP 2 c.id, c.text, VectorDistance(c.embedding, @vector) AS distance
+FROM c ORDER BY VectorDistance(c.embedding, @vector)
+</code></pre></li>
+<li><blockquote class="ok"><p><strong>Check</strong>: For the recycling question, the bin record should rank first.</p></blockquote></li>
+<li><p>Note that the query passes <code>partition_key=user</code>, so the vector search runs <strong>within one identity&#x27;s partition</strong>. Vector similarity and access scoping compose here rather than fighting each other.</p></li>
+<li><p>The same rule from Exercise 17 applies: documents and query must use the same embedding model and dimensions. Changing the vector policy requires a new compatible container and a re-index — not an environment-variable change.</p></li>
+</ol>
+<h2 id="inspect-the-service-owned-store-instructor-led">Inspect the service-owned store (instructor-led)</h2>
+<p>Point <code>COSMOS_ENDPOINT</code> at the approved bring-your-own account <strong>temporarily</strong>, then restore it.</p>
+<ol>
+<li><pre><code class="language-powershell">python src/inspect_byo.py
+</code></pre>
+<p>This reads container names, partition paths and TTL metadata only. It never reads another user&#x27;s conversation content.</p></li>
+<li><p>Standard setup uses the <code>enterprise_memory</code> database. Container names depend on the runtime version — a classic runtime shows containers such as <code>thread-message-store</code>, <code>system-thread-message-store</code> and <code>agent-entity-store</code>, while newer runtime state uses <code>agent-definitions-v1</code> and <code>run-state-v1</code>.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Record what <em>your</em> account actually shows. Do not assume a container list from documentation.</p></blockquote></li>
+<li><p>Now reconcile the throughput question, which is genuinely inconsistent in the published guidance:</p>
+<blockquote class="warn"><p><strong>Caution</strong>: Current standard-setup documentation states a <strong>3,000 RU/s account limit</strong> and also describes <strong>five containers at 1,000 RU/s each</strong>, while its troubleshooting section still references three containers. Before provisioning, check your selected runtime&#x27;s actual template, container count and provisioned offers. Do not present 3,000 RU/s as sufficient for every topology.</p></blockquote></li>
+<li><p>Also record which billing mode the account uses. Serverless consumption and provisioned RU/s are different cost models and are not comparable line by line.</p></li>
+<li><p>Restore your <code>COSMOS_ENDPOINT</code> to the lab account.</p></li>
+</ol>
+<h2 id="make-the-architecture-decision">Make the architecture decision</h2>
+<p>Record these decisions in a local <code>data/evidence.md</code> with your measured outputs attached.</p>
+<ol>
+<li><table><thead><tr><th>Choose</th><th>When</th></tr></thead><tbody><tr><td><strong>Cosmos</strong> as vector store</td><td>Operational JSON and vector similarity belong together with your application data, queried within one partition.</td></tr><tr><td><strong>Azure AI Search</strong></td><td>Document ingestion pipelines, skillsets, hybrid and semantic retrieval, reranking and search-specific features — this course&#x27;s document use case.</td></tr></tbody></table></li>
+<li><p>Distinguish managed memory from custom RAG: managed memory is runtime-owned state; custom RAG is retrieval your application performs. Neither automatically provides cross-session preferences, and neither grants access to documents.</p></li>
+<li><p>State the point that ties this back to Exercise 14:</p>
+<blockquote><p><strong>Note</strong>: Persisting a conversation does <strong>not</strong> give the model memory. After <code>read.py</code>, your application must decide what to pass into the next run. The database stores; the application remembers.</p></blockquote></li>
+<li><p>Attach your evidence: save and read output, the TTL expiry result, the vector ranking, and the request charges you captured.</p></li>
+</ol>
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Why is <code>/userId</code> as a partition key not, by itself, authorisation?</summary><ul><li>A. It is — Cosmos enforces it per user</li><li>B. Partitioning routes data; the application must constrain access using verified identity</li><li>C. Because it is a string</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>A principal with database-wide access can query any partition. Isolation depends on the trusted application choosing the partition.</p></div></details>
+<details class="kc"><summary>2. Why do original files and vectors live in different stores?</summary><ul><li>A. Cost only</li><li>B. Their ingestion, retrieval and persistence responsibilities differ</li><li>C. They must not — one store is always better</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>Blob holds originals, Search holds retrievable chunks and embeddings, Cosmos holds application or runtime state. Each has a different access and lifecycle model.</p></div></details>
+<details class="kc"><summary>3. Does persisting a conversation in Cosmos give the model memory?</summary><ul><li>A. Yes, automatically</li><li>B. No — the application must select and supply the saved context</li><li>C. Only with TTL enabled</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>The model is stateless. Storage makes recall <em>possible</em>; your code makes it happen.</p></div></details>
+<h2 id="summary">Summary</h2>
+<p>You persisted agent state in Cosmos DB partitioned by a token-derived identity, recovered it in a separate process, watched TTL expire a short-term session while a long-term preference survived, ran a vector query scoped to one partition, and inspected the service-owned <code>enterprise_memory</code> metadata.</p>
+<p>You also reconciled the conflicting RU/s guidance against your actual account, and recorded when to choose Cosmos vectors over Azure AI Search.</p>
+<h2 id="clean-up">Clean up</h2>
+<p>Run clean-up only after completing both the save and vector steps:</p>
+<pre><code class="language-powershell">python cleanup.py
+</code></pre>
+<p>It removes the fixed synthetic items in the <strong>current identity&#x27;s</strong> partition only. A missing item raises visibly, including after a TTL expiry — remove any remaining IDs in Data Explorer if needed.</p>
+<blockquote class="warn"><p><strong>Caution</strong>: The instructor removes the dedicated <code>workshop-memory</code> database after review, once no other participant needs it. Never delete <code>enterprise_memory</code>.</p></blockquote>
+<h2 id="references">Further reading</h2>
+<ul><li><a href="https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search">Cosmos DB vector search</a></li><li><a href="https://learn.microsoft.com/azure/cosmos-db/nosql/time-to-live">Time to live</a></li><li><a href="https://learn.microsoft.com/azure/foundry/agents/concepts/standard-agent-setup">Standard agent setup</a></li></ul>
+<div class="pager"><a href="18-end-to-end-rag.html">&#8592; Build and measure a RAG pipeline</a><a href="20-hosted-tools-and-integrations.html">Host tools and connect integrations &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,502 @@
+[
+  {
+    "order_id": "ORD-001",
+    "customer_name": "Olivia Wilson",
+    "status": "processing",
+    "order_date": "2026-09-01T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "NSW"
+  },
+  {
+    "order_id": "ORD-002",
+    "customer_name": "Noah Nguyen",
+    "status": "shipped",
+    "order_date": "2026-09-02T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "VIC"
+  },
+  {
+    "order_id": "ORD-003",
+    "customer_name": "Amelia Patel",
+    "status": "delivered",
+    "order_date": "2026-09-03T09:00:00+10:00",
+    "total_aud": 195.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 3,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "QLD"
+  },
+  {
+    "order_id": "ORD-004",
+    "customer_name": "Jack Williams",
+    "status": "processing",
+    "order_date": "2026-09-04T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "WA"
+  },
+  {
+    "order_id": "ORD-005",
+    "customer_name": "Charlotte Brown",
+    "status": "shipped",
+    "order_date": "2026-09-05T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "SA"
+  },
+  {
+    "order_id": "ORD-006",
+    "customer_name": "Olivia Wilson",
+    "status": "delivered",
+    "order_date": "2026-09-06T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "NSW"
+  },
+  {
+    "order_id": "ORD-007",
+    "customer_name": "Noah Nguyen",
+    "status": "processing",
+    "order_date": "2026-09-07T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "VIC"
+  },
+  {
+    "order_id": "ORD-008",
+    "customer_name": "Amelia Patel",
+    "status": "shipped",
+    "order_date": "2026-09-08T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "QLD"
+  },
+  {
+    "order_id": "ORD-009",
+    "customer_name": "Jack Williams",
+    "status": "delivered",
+    "order_date": "2026-09-09T09:00:00+10:00",
+    "total_aud": 220.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 4,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "WA"
+  },
+  {
+    "order_id": "ORD-010",
+    "customer_name": "Charlotte Brown",
+    "status": "processing",
+    "order_date": "2026-09-10T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "SA"
+  },
+  {
+    "order_id": "ORD-011",
+    "customer_name": "Olivia Wilson",
+    "status": "shipped",
+    "order_date": "2026-09-11T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "NSW"
+  },
+  {
+    "order_id": "ORD-012",
+    "customer_name": "Noah Nguyen",
+    "status": "delivered",
+    "order_date": "2026-09-12T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "VIC"
+  },
+  {
+    "order_id": "ORD-013",
+    "customer_name": "Amelia Patel",
+    "status": "processing",
+    "order_date": "2026-09-13T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "QLD"
+  },
+  {
+    "order_id": "ORD-014",
+    "customer_name": "Jack Williams",
+    "status": "shipped",
+    "order_date": "2026-09-14T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "WA"
+  },
+  {
+    "order_id": "ORD-015",
+    "customer_name": "Charlotte Brown",
+    "status": "delivered",
+    "order_date": "2026-09-15T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "SA"
+  },
+  {
+    "order_id": "ORD-016",
+    "customer_name": "Olivia Wilson",
+    "status": "processing",
+    "order_date": "2026-09-16T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "NSW"
+  },
+  {
+    "order_id": "ORD-017",
+    "customer_name": "Noah Nguyen",
+    "status": "shipped",
+    "order_date": "2026-09-17T09:00:00+10:00",
+    "total_aud": 220.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 4,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "VIC"
+  },
+  {
+    "order_id": "ORD-018",
+    "customer_name": "Amelia Patel",
+    "status": "delivered",
+    "order_date": "2026-09-18T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "QLD"
+  },
+  {
+    "order_id": "ORD-019",
+    "customer_name": "Jack Williams",
+    "status": "processing",
+    "order_date": "2026-09-19T09:00:00+10:00",
+    "total_aud": 220.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 4,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "WA"
+  },
+  {
+    "order_id": "ORD-020",
+    "customer_name": "Charlotte Brown",
+    "status": "shipped",
+    "order_date": "2026-09-20T09:00:00+10:00",
+    "total_aud": 195.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 3,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "SA"
+  },
+  {
+    "order_id": "ORD-021",
+    "customer_name": "Olivia Wilson",
+    "status": "delivered",
+    "order_date": "2026-09-21T09:00:00+10:00",
+    "total_aud": 145.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 1,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "NSW"
+  },
+  {
+    "order_id": "ORD-022",
+    "customer_name": "Noah Nguyen",
+    "status": "processing",
+    "order_date": "2026-09-22T09:00:00+10:00",
+    "total_aud": 170.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 2,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "VIC"
+  },
+  {
+    "order_id": "ORD-023",
+    "customer_name": "Amelia Patel",
+    "status": "shipped",
+    "order_date": "2026-09-23T09:00:00+10:00",
+    "total_aud": 220.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 4,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "QLD"
+  },
+  {
+    "order_id": "ORD-024",
+    "customer_name": "Jack Williams",
+    "status": "delivered",
+    "order_date": "2026-09-24T09:00:00+10:00",
+    "total_aud": 195.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 3,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "WA"
+  },
+  {
+    "order_id": "ORD-025",
+    "customer_name": "Charlotte Brown",
+    "status": "processing",
+    "order_date": "2026-09-25T09:00:00+10:00",
+    "total_aud": 195.0,
+    "items": [
+      {
+        "name": "Training workbook",
+        "quantity": 3,
+        "unit_price_aud": 25.0
+      },
+      {
+        "name": "Workshop seat",
+        "quantity": 1,
+        "unit_price_aud": 120.0
+      }
+    ],
+    "region": "SA"
+  }
+]
