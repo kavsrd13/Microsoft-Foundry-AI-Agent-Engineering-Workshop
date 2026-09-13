@@ -14,7 +14,7 @@ def main() -> None:
         allow_preview=True,
     )
 
-    agent_name = "prompt-agent1"
+    agent_name = "prompt-agent"
     instructions = "You are a concise workshop assistant. Explain clearly and briefly."
 
     agent = project.agents.create_version(
