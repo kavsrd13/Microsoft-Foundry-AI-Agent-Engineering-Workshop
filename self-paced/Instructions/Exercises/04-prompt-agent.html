@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Quickstart: Create a prompt agent | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul>
+  <li><a href="#before-you-start">Before you start</a></li>
+  <li><a href="#task-1-set-up">Task 1: Set up</a></li>
+  <li><a href="#task-2-create-a-prompt-agent">Task 2: Create a prompt agent</a></li>
+  <li><a href="#task-3-chat-with-the-agent">Task 3: Chat with the agent</a></li>
+  <li><a href="#knowledge-check">Knowledge check</a></li>
+  <li><a href="#summary">Summary</a></li>
+  <li><a href="#clean-up">Clean up</a></li>
+  <li><a href="#references">Further reading</a></li>
+</ul></aside>
+<article>
+<h1 id="top">Quickstart: Create a prompt agent</h1>
+<p>In this quickstart, you create a <strong>prompt agent</strong> in Microsoft Foundry Agent Service and have a conversation with it. A prompt agent is a declaratively defined agent that combines a model from the Foundry model catalog, instructions, tools, and natural language prompts to drive behavior.</p>
+<p>Unlike ephemeral agents that exist only in memory during your code execution, a prompt agent is persisted as a named resource in your Foundry project with full versioning.</p>
+<p>This exercise takes approximately <strong>45</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: This code uses <strong>Azure AI Projects 2.x</strong> (the Foundry projects new API) and is incompatible with Azure AI Projects 1.x.</p></blockquote>
+<div class="meta">
+  <div><strong>Lab folder</strong>: <code>labs/04-prompt-agent</code></div>
+  <div><strong>Run scripts from</strong>: the lab folder</div>
+  <div><strong>Environment</strong>: <code>azure-ai-projects>=2.3.0</code>, <code>azure-identity</code>, <code>python-dotenv</code></div>
+</div>
+<div class="tags"><span class="tag alt">Foundry Agent Service</span><span class="tag">Prompt Agent</span><span class="tag">Quickstart</span></div>
+
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul>
+  <li>Set up an isolated virtual environment and install the required Azure AI Projects packages.</li>
+  <li>Authenticate using <code>az login</code> and Azure Entra credentials with <code>DefaultAzureCredential</code>.</li>
+  <li>Define and create a prompt agent resource in your Foundry project using <code>PromptAgentDefinition</code>.</li>
+  <li>Connect to your agent using the OpenAI-compatible Responses API client.</li>
+  <li>Create a multi-turn conversation session and chat with the agent, verifying context retention.</li>
+</ul>
+
+<h3>Prerequisites</h3>
+<ul>
+  <li>Python 3.10 or later installed (Python 3.11 recommended).</li>
+  <li>The <a href="https://learn.microsoft.com/cli/azure/install-azure-cli">Azure CLI</a> installed and signed in (<code>az login</code>).</li>
+  <li>A model deployed in your Microsoft Foundry project (e.g. <code>gpt-4o-mini</code> or <code>gpt-4o</code>).</li>
+  <li>Your Foundry project endpoint URL, formatted as: <code>https://&lt;resource-name&gt;.services.ai.azure.com/api/projects/&lt;project-name&gt;</code>.</li>
+</ul>
+
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<p>Begin by creating an isolated virtual environment and installing the required packages.</p>
+<ol>
+<li><p>Open a PowerShell terminal and navigate to the lab folder:</p>
+<pre><code class="language-powershell">cd labs/04-prompt-agent
+</code></pre></li>
+<li><p>Create a Python virtual environment:</p>
+<pre><code class="language-powershell">py -3.11 -m venv .venv
+</code></pre></li>
+<li><p>Activate the virtual environment:</p>
+<pre><code class="language-powershell">.venv\Scripts\Activate.ps1
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Your terminal prompt should now be prefixed with <code>(.venv)</code>.</p></blockquote></li>
+<li><p>Install the required packages. Note the pinned version of <code>azure-ai-projects</code>:</p>
+<pre><code class="language-powershell">pip install "azure-ai-projects>=2.3.0" azure-identity python-dotenv
+</code></pre></li>
+<li><p>Sign in using the Azure CLI to authenticate before running your Python scripts:</p>
+<pre><code class="language-powershell">az login
+</code></pre>
+<blockquote><p><strong>Note</strong>: <code>DefaultAzureCredential</code> automatically picks up your active Azure CLI login session, so no API keys or passwords are stored in code.</p></blockquote></li>
+</ol>
+
+<h2 id="task-2-create-a-prompt-agent">Task 2: Create a prompt agent</h2>
+<p>Now create a prompt agent using your deployed model. The agent uses a <code>PromptAgentDefinition</code> with instructions that define the agent's behavior. You can update or delete agents anytime.</p>
+<ol>
+<li><p>Create a file called <code>create_agent.py</code> in <code>labs/04-prompt-agent</code>:</p>
+<pre><code class="language-powershell">New-Item create_agent.py -ItemType File
+</code></pre></li>
+<li><p>Add the following code to <code>create_agent.py</code> (exact code from Microsoft Learn):</p>
+<pre><code class="language-python">from azure.identity import DefaultAzureCredential
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import PromptAgentDefinition
+
+# Format: "https://resource_name.services.ai.azure.com/api/projects/project_name"
+FOUNDRY_PROJECT_ENDPOINT = "your_project_endpoint"
+FOUNDRY_AGENT_NAME = "your-agent-name"
+
+# Create project client to call Foundry API
+project = AIProjectClient(
+    endpoint=FOUNDRY_PROJECT_ENDPOINT,
+    credential=DefaultAzureCredential(),
+)
+
+# Create an agent with a model and instructions
+agent = project.agents.create_version(
+    agent_name=FOUNDRY_AGENT_NAME,
+    definition=PromptAgentDefinition(
+        model="gpt-5-mini",  # supports all Foundry direct models
+        instructions="You are a helpful assistant that answers general questions",
+    ),
+)
+print(f"Agent created (id: {agent.id}, name: {agent.name}, version: {agent.version})")
+</code></pre></li>
+<li><p><strong>Code explanation</strong>:</p>
+<ul>
+  <li><code>AIProjectClient</code>: The root client that communicates with your Foundry project endpoint using Entra credentials.</li>
+  <li><code>PromptAgentDefinition</code>: The declarative blueprint for the agent, defining which foundation model to use and its system instructions.</li>
+  <li><code>project.agents.create_version(...)</code>: Creates or publishes a versioned prompt agent in Foundry Agent Service. If the agent does not yet exist, version 1 is created. Subsequent calls publish new immutable versions.</li>
+</ul></li>
+<li><p>Update <code>FOUNDRY_PROJECT_ENDPOINT</code> with your actual Foundry project endpoint, <code>FOUNDRY_AGENT_NAME</code> with your desired agent name (such as <code>"MyPromptAgent"</code>), and <code>model</code> with your deployed model name (such as <code>"gpt-4o-mini"</code>).</p></li>
+<li><p>Run the script to create your agent:</p>
+<pre><code class="language-powershell">python create_agent.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The output confirms the agent was created and prints the agent ID, name, and version number to the console, for example:<br>
+<code>Agent created (id: agent_abc123, name: MyPromptAgent, version: 1)</code></p></blockquote></li>
+</ol>
+
+<h2 id="task-3-chat-with-the-agent">Task 3: Chat with the agent</h2>
+<p>Use the agent you created to interact by asking a question and a related follow-up. The conversation maintains history across these interactions.</p>
+<ol>
+<li><p>Create a second file called <code>chat_with_agent.py</code> in <code>labs/04-prompt-agent</code>:</p>
+<pre><code class="language-powershell">New-Item chat_with_agent.py -ItemType File
+</code></pre></li>
+<li><p>Add the following code to <code>chat_with_agent.py</code> (exact code from Microsoft Learn):</p>
+<pre><code class="language-python">from azure.identity import DefaultAzureCredential
+from azure.ai.projects import AIProjectClient
+
+# Format: "https://resource_name.services.ai.azure.com/api/projects/project_name"
+FOUNDRY_PROJECT_ENDPOINT = "your_project_endpoint"
+FOUNDRY_AGENT_NAME = "your_agent_name"
+
+# Create project and openai clients to call Foundry API
+project = AIProjectClient(
+    endpoint=FOUNDRY_PROJECT_ENDPOINT,
+    credential=DefaultAzureCredential(),
+)
+# Get an OpenAI client pre-bound to the specified agent
+openai = project.get_openai_client(agent_name=FOUNDRY_AGENT_NAME)
+
+# Create a conversation for multi-turn chat
+conversation = openai.conversations.create()
+
+# Chat with the agent to answer questions
+response = openai.responses.create(
+    conversation=conversation.id,
+    input="What is the size of France in square miles?",
+)
+print(response.output_text)
+
+# Ask a follow-up question in the same conversation
+response = openai.responses.create(
+    conversation=conversation.id,
+    input="And what is the capital city?",
+)
+print(response.output_text)
+</code></pre></li>
+<li><p><strong>Code explanation</strong>:</p>
+<ul>
+  <li><code>project.get_openai_client(agent_name=FOUNDRY_AGENT_NAME)</code>: Obtains an OpenAI-compatible client pre-configured to route requests through your Foundry project and bound to your specific agent definition.</li>
+  <li><code>openai.conversations.create()</code>: Allocates a server-side conversation session. This manages message state and history automatically.</li>
+  <li><code>openai.responses.create(conversation=..., input=...)</code>: Invokes the Responses API. Passing <code>conversation.id</code> ensures that previous turns are included in the prompt context.</li>
+  <li>The follow-up prompt (<em>"And what is the capital city?"</em>) does not mention "France", but the agent correctly answers Paris because conversation history is preserved.</li>
+</ul></li>
+<li><p>Update the placeholders with your project endpoint and agent name, then run the chat script:</p>
+<pre><code class="language-powershell">python chat_with_agent.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: You see the agent's responses to both prompts. The follow-up response demonstrates that the agent maintains conversation history across turns.</p></blockquote></li>
+</ol>
+
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. Where does the definition of a prompt agent live?</summary>
+<ul>
+  <li>A. Only in local memory in the Python script</li>
+  <li>B. As a versioned resource in the Foundry project</li>
+  <li>C. In an Azure Blob storage account only</li>
+</ul>
+<div class="ans"><p><strong>Answer: B</strong></p><p>Prompt agents are declaratively defined and persisted as resources within your Foundry project, allowing multiple applications and versions to share the same agent.</p></div></details>
+
+<details class="kc"><summary>2. How does the agent maintain state between turns when using the Responses API?</summary>
+<ul>
+  <li>A. The client must re-send the entire message list each turn</li>
+  <li>B. By passing the `conversation.id` created via `openai.conversations.create()`</li>
+  <li>C. State is saved automatically in local cookies</li>
+</ul>
+<div class="ans"><p><strong>Answer: B</strong></p><p>Passing the `conversation.id` links turns together so Foundry Agent Service can manage and inject prior conversation context.</p></div></details>
+
+<details class="kc"><summary>3. Which SDK class defines the agent's model and instructions?</summary>
+<ul>
+  <li>A. `PromptAgentDefinition`</li>
+  <li>B. `ChatCompletionsOptions`</li>
+  <li>C. `AgentConfig`</li>
+</ul>
+<div class="ans"><p><strong>Answer: A</strong></p><p>In Azure AI Projects 2.x, `PromptAgentDefinition` encapsulates the model name, instructions, and tools for the agent.</p></div></details>
+
+<h2 id="summary">Summary</h2>
+<p>In this quickstart, you created a prompt agent in Microsoft Foundry Agent Service and interacted with it across multiple turns:</p>
+<ul>
+  <li>Created a versioned prompt agent using <code>project.agents.create_version()</code> and <code>PromptAgentDefinition</code>.</li>
+  <li>Acquired an agent-scoped OpenAI Responses API client via <code>project.get_openai_client()</code>.</li>
+  <li>Created a conversation session with <code>openai.conversations.create()</code>.</li>
+  <li>Conducted a multi-turn dialogue, proving server-side context retention across turns.</li>
+</ul>
+
+<h2 id="clean-up">Clean up</h2>
+<p>If you no longer need the resources you created, you can delete the agent from the Foundry portal or clean up the local environment:</p>
+<pre><code class="language-powershell">deactivate
+</code></pre>
+
+<h2 id="references">Further reading</h2>
+<ul>
+  <li><a href="https://learn.microsoft.com/azure/foundry/agents/quickstarts/prompt-agent?tabs=python">Microsoft Learn: Quickstart: Create a prompt agent</a></li>
+  <li><a href="https://learn.microsoft.com/azure/foundry/agents/overview">What is Foundry Agent Service?</a></li>
+  <li><a href="https://learn.microsoft.com/azure/foundry/agents/quickstarts/responses-api?pivots=python">Quickstart: Build agents using the Responses API</a></li>
+</ul>
+
+<div class="pager"><a href="03-first-agent.html">&#8592; Build your first agent</a><a href="05-responses-api.html">Build agents using the Responses API &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Quickstart: Build agents using the Responses API | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul>
+  <li><a href="#before-you-start">Before you start</a></li>
+  <li><a href="#task-1-set-up">Task 1: Set up</a></li>
+  <li><a href="#task-2-create-an-ephemeral-agent">Task 2: Create an ephemeral agent</a></li>
+  <li><a href="#task-3-add-function-tools">Task 3: Add function tools</a></li>
+  <li><a href="#task-4-use-web-search">Task 4: Use web search</a></li>
+  <li><a href="#task-5-stream-responses">Task 5: Stream responses</a></li>
+  <li><a href="#task-6-observability">Task 6: Observability and governance</a></li>
+  <li><a href="#knowledge-check">Knowledge check</a></li>
+  <li><a href="#summary">Summary</a></li>
+  <li><a href="#clean-up">Clean up</a></li>
+  <li><a href="#references">Further reading</a></li>
+</ul></aside>
+<article>
+<h1 id="top">Quickstart: Build agents using the Responses API</h1>
+<p>In this quickstart, you call the <strong>Responses API</strong> on a Foundry project endpoint from your own code to build an <strong>ephemeral agent</strong> &mdash; an agent whose definition (instructions, tools, model) lives in your application code instead of as a persisted resource in Foundry Agent Service. Each call constructs the agent in your process and invokes the Responses API for model inference and tool orchestration.</p>
+<p>This pattern fits developers, ISVs, and digital natives who want their agent definitions to ship and version with the rest of their application code, rather than as an out-of-band resource that someone has to keep in sync with the app. Unlike prompt agents, there is no agent resource to create, update, or delete in Foundry &mdash; lifecycle management is replaced by calling the Responses API directly.</p>
+<p>This exercise takes approximately <strong>60</strong> minutes.</p>
+<blockquote><p><strong>Note</strong>: The recommended path is the <strong>Agent Framework</strong> (<code>agent-framework-foundry</code>), which handles authentication, tool wiring, and message orchestration for you using <code>FoundryChatClient</code>.</p></blockquote>
+<div class="meta">
+  <div><strong>Lab folder</strong>: <code>labs/05-responses-api</code></div>
+  <div><strong>Run scripts from</strong>: the lab folder</div>
+  <div><strong>Environment</strong>: <code>agent-framework-foundry</code>, <code>aiohttp</code>, <code>azure-identity</code></div>
+</div>
+<div class="tags"><span class="tag alt">Responses API</span><span class="tag">Ephemeral Agent</span><span class="tag">Agent Framework</span></div>
+
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul>
+  <li>Understand the ephemeral agent pattern and when to use in-process vs hosted agents.</li>
+  <li>Install the <code>agent-framework-foundry</code> package and set up environment variables.</li>
+  <li>Create an ephemeral agent using <code>FoundryChatClient</code> and <code>Agent</code>.</li>
+  <li>Define local Python function tools using the <code>@tool</code> decorator and let the agent invoke them.</li>
+  <li>Add hosted platform tools like web search via <code>FoundryChatClient.get_web_search_tool()</code>.</li>
+  <li>Stream responses token by token as they generate.</li>
+</ul>
+
+<h3>Prerequisites</h3>
+<ul>
+  <li>Python 3.10 or later installed.</li>
+  <li>The <a href="https://learn.microsoft.com/cli/azure/install-azure-cli">Azure CLI</a> installed and signed in (<code>az login</code>).</li>
+  <li>A model deployed in your Microsoft Foundry project (e.g. <code>gpt-4o-mini</code> or <code>gpt-4o</code>).</li>
+  <li>Your Foundry project endpoint URL and deployed model name.</li>
+</ul>
+
+<h2 id="task-1-set-up">Task 1: Set up</h2>
+<ol>
+<li><p>Open a PowerShell terminal and navigate to the lab folder:</p>
+<pre><code class="language-powershell">cd labs/05-responses-api
+</code></pre></li>
+<li><p>Create a virtual environment:</p>
+<pre><code class="language-powershell">py -3.11 -m venv .venv
+</code></pre></li>
+<li><p>Activate the virtual environment:</p>
+<pre><code class="language-powershell">.venv\Scripts\Activate.ps1
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Your terminal prompt should now show <code>(.venv)</code>.</p></blockquote></li>
+<li><p>Install the Agent Framework with the Foundry provider and async HTTP dependencies:</p>
+<pre><code class="language-powershell">pip install agent-framework-foundry aiohttp azure-identity pydantic python-dotenv
+</code></pre></li>
+<li><p>Authenticate with Azure CLI:</p>
+<pre><code class="language-powershell">az login
+</code></pre></li>
+<li><p>Set your environment variables in PowerShell or create a <code>.env</code> file:</p>
+<pre><code class="language-powershell">$env:FOUNDRY_PROJECT_ENDPOINT = "https://your-resource.services.ai.azure.com/api/projects/your-project"
+$env:FOUNDRY_MODEL = "gpt-4o-mini"
+</code></pre></li>
+</ol>
+
+<h2 id="task-2-create-an-ephemeral-agent">Task 2: Create an ephemeral agent</h2>
+<p>Create an ephemeral agent that runs locally in your process and calls the Responses API for model inference and tool orchestration.</p>
+<ol>
+<li><p>Create a file called <code>01_ephemeral_agent.py</code>:</p>
+<pre><code class="language-powershell">New-Item 01_ephemeral_agent.py -ItemType File
+</code></pre></li>
+<li><p>Add the following code (exact code from Microsoft Learn):</p>
+<pre><code class="language-python">import asyncio
+import os
+
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from azure.identity import AzureCliCredential
+
+async def main() -&gt; None:
+    agent = Agent(
+        client=FoundryChatClient(
+            project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+            model=os.environ["FOUNDRY_MODEL"],
+            credential=AzureCliCredential(),
+        ),
+        instructions="You are a helpful assistant.",
+    )
+
+    result = await agent.run("What is the capital of France?")
+    print(f"Agent: {result}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</code></pre></li>
+<li><p><strong>Code explanation</strong>:</p>
+<ul>
+  <li><code>FoundryChatClient</code>: Connects to the Foundry project endpoint (<code>{project_endpoint}/openai/v1/responses</code>) and uses Entra ID authentication via <code>AzureCliCredential</code>.</li>
+  <li><code>Agent(...)</code>: Instantiates an in-process agent with instructions and model client.</li>
+  <li><code>agent.run(...)</code>: Sends the user prompt to the Responses API and awaits the natural language reply.</li>
+  <li><strong>Lifecycle</strong>: Because this agent is ephemeral, no definition is saved or stored in Azure &mdash; the agent lives and terminates with the Python process.</li>
+</ul></li>
+<li><p>Run the script:</p>
+<pre><code class="language-powershell">python 01_ephemeral_agent.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The output prints the agent&#39;s response: <code>Agent: The capital of France is Paris.</code></p></blockquote></li>
+</ol>
+
+<h2 id="task-3-add-function-tools">Task 3: Add function tools</h2>
+<p>Define local function tools and pass them to the agent. The agent automatically calls these tools when needed during a conversation.</p>
+<ol>
+<li><p>Create a file called <code>02_function_tool.py</code>:</p>
+<pre><code class="language-powershell">New-Item 02_function_tool.py -ItemType File
+</code></pre></li>
+<li><p>Add the following code (exact code from Microsoft Learn):</p>
+<pre><code class="language-python">import asyncio
+import os
+from random import randint
+from typing import Annotated
+
+from agent_framework import Agent, tool
+from agent_framework.foundry import FoundryChatClient
+from azure.identity import AzureCliCredential
+from pydantic import Field
+
+@tool(approval_mode="never_require")
+def get_weather(
+    location: Annotated[str, Field(description="The location to get the weather for.")],
+) -&gt; str:
+    """Get the weather for a given location."""
+    conditions = ["sunny", "cloudy", "rainy", "stormy"]
+    return f"The weather in {location} is {conditions[randint(0, 3)]} with a high of {randint(10, 30)}°C."
+
+async def main() -&gt; None:
+    agent = Agent(
+        client=FoundryChatClient(
+            project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+            model=os.environ["FOUNDRY_MODEL"],
+            credential=AzureCliCredential(),
+        ),
+        instructions="You are a helpful weather agent.",
+        tools=get_weather,
+    )
+
+    result = await agent.run("What's the weather like in Seattle?")
+    print(f"Agent: {result}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</code></pre></li>
+<li><p><strong>Code explanation</strong>:</p>
+<ul>
+  <li><code>@tool(approval_mode="never_require")</code>: Registers a Python function as a tool callable by the agent. The docstring and <code>Field(description=...)</code> describe the tool&#39;s purpose and schema to the model.</li>
+  <li><code>tools=get_weather</code>: Provides the tool to the agent. When the agent receives a prompt asking for weather, the Responses API generates a tool call, the local Python function executes in-process, and the result is returned to the model to formulate the final answer.</li>
+</ul></li>
+<li><p>Run the script:</p>
+<pre><code class="language-powershell">python 02_function_tool.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The agent automatically calls <code>get_weather</code> for &quot;Seattle&quot; and replies in natural language with the generated temperature and condition.</p></blockquote></li>
+</ol>
+
+<h2 id="task-4-use-web-search">Task 4: Use the web search tool</h2>
+<p>The Responses API on the Foundry project endpoint provides built-in hosted tools like web search. Give your agent access to web search without writing any local search implementation.</p>
+<ol>
+<li><p>Create a file called <code>03_web_search_tool.py</code>:</p>
+<pre><code class="language-powershell">New-Item 03_web_search_tool.py -ItemType File
+</code></pre></li>
+<li><p>Add the following code (exact code from Microsoft Learn):</p>
+<pre><code class="language-python">import asyncio
+import os
+
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from azure.identity import AzureCliCredential
+
+async def main() -&gt; None:
+    agent = Agent(
+        client=FoundryChatClient(
+            project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+            model=os.environ["FOUNDRY_MODEL"],
+            credential=AzureCliCredential(),
+        ),
+        instructions="You are a research assistant. Use web search to find current information.",
+        tools=[
+            FoundryChatClient.get_web_search_tool(),
+        ],
+    )
+
+    result = await agent.run("What are the latest updates to Microsoft Foundry?")
+    print(f"Agent: {result}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</code></pre></li>
+<li><p><strong>Combining tools</strong>: You can also combine hosted tools and local functions in a single agent:</p>
+<pre><code class="language-python">agent = Agent(
+    client=FoundryChatClient(
+        project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+        model=os.environ["FOUNDRY_MODEL"],
+        credential=AzureCliCredential(),
+    ),
+    instructions="You are a helpful assistant with web and weather capabilities.",
+    tools=[
+        FoundryChatClient.get_web_search_tool(),
+        get_weather,  # Local function tool defined with @tool
+    ],
+)
+</code></pre></li>
+<li><p>Run the script:</p>
+<pre><code class="language-powershell">python 03_web_search_tool.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The agent searches the web server-side via the Foundry project endpoint and returns recent information about Microsoft Foundry.</p></blockquote></li>
+</ol>
+
+<h2 id="task-5-stream-responses">Task 5: Stream responses</h2>
+<p>Receive responses as they generate instead of waiting for the full completion.</p>
+<ol>
+<li><p>Create a file called <code>04_stream_responses.py</code>:</p>
+<pre><code class="language-powershell">New-Item 04_stream_responses.py -ItemType File
+</code></pre></li>
+<li><p>Add the following code (exact code from Microsoft Learn):</p>
+<pre><code class="language-python">import asyncio
+import os
+
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from azure.identity import AzureCliCredential
+
+async def main() -&gt; None:
+    agent = Agent(
+        client=FoundryChatClient(
+            project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+            model=os.environ["FOUNDRY_MODEL"],
+            credential=AzureCliCredential(),
+        ),
+        instructions="You are a helpful assistant.",
+    )
+
+    print("Agent: ", end="", flush=True)
+    async for chunk in agent.run("Tell me a fun fact.", stream=True):
+        if chunk.text:
+            print(chunk.text, end="", flush=True)
+    print()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</code></pre></li>
+<li><p><strong>Code explanation</strong>: Setting <code>stream=True</code> returns an asynchronous generator yielding delta chunks. Printing each <code>chunk.text</code> as it arrives gives users immediate, responsive feedback.</p></li>
+<li><p>Run the streaming script:</p>
+<pre><code class="language-powershell">python 04_stream_responses.py
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Words appear smoothly in real time across the terminal until the sentence completes.</p></blockquote></li>
+</ol>
+
+<h2 id="task-6-observability">Task 6: Observability and enterprise capabilities</h2>
+<p>Ephemeral does not mean unmanaged. Because calls route through the Foundry project endpoint:</p>
+<ul>
+  <li><strong>Tracing and telemetry</strong>: Requests, token counts, and tool executions flow automatically into Azure Application Insights.</li>
+  <li><strong>Content filters &amp; RAI</strong>: Project-level responsible AI policies and content filters apply to every prompt and response.</li>
+  <li><strong>On-Behalf-Of (OBO) auth</strong>: Tools can execute downstream queries as the authenticated caller.</li>
+</ul>
+
+<h2 id="knowledge-check">Knowledge check</h2>
+<p>Answer each question, then expand it to check yourself.</p>
+<details class="kc"><summary>1. What is the key difference between a prompt agent and an ephemeral agent?</summary>
+<ul>
+  <li>A. Ephemeral agents do not support models from the catalog</li>
+  <li>B. Ephemeral agents exist only in application code and require no Azure resource lifecycle management</li>
+  <li>C. Prompt agents cannot use tools</li>
+</ul>
+<div class="ans"><p><strong>Answer: B</strong></p><p>Ephemeral agents ship and version directly with your codebase, avoiding the need to create, update, or delete cloud agent resources.</p></div></details>
+
+<details class="kc"><summary>2. Which class in <code>agent_framework.foundry</code> connects your agent to the Foundry Responses API?</summary>
+<ul>
+  <li>A. <code>FoundryChatClient</code></li>
+  <li>B. <code>OpenAIHttpClient</code></li>
+  <li>C. <code>AzureAgentSession</code></li>
+</ul>
+<div class="ans"><p><strong>Answer: A</strong></p><p><code>FoundryChatClient</code> binds to your project endpoint and handles authentication, tool wiring, and Responses API calls.</p></div></details>
+
+<details class="kc"><summary>3. How do you stream tokens incrementally with the Agent Framework?</summary>
+<ul>
+  <li>A. Call <code>agent.poll()</code> in a while loop</li>
+  <li>B. Pass <code>stream=True</code> to <code>agent.run()</code> and iterate over chunks with <code>async for</code></li>
+  <li>C. Use websockets directly</li>
+</ul>
+<div class="ans"><p><strong>Answer: B</strong></p><p>Passing <code>stream=True</code> yields incremental text deltas as an async generator.</p></div></details>
+
+<h2 id="summary">Summary</h2>
+<p>You built an ephemeral agent using Microsoft Foundry Responses API and Agent Framework:</p>
+<ul>
+  <li>Created an in-process agent with <code>FoundryChatClient</code> and <code>Agent</code>.</li>
+  <li>Decorated local functions with <code>@tool</code> for automated function calling.</li>
+  <li>Added hosted web search using <code>FoundryChatClient.get_web_search_tool()</code>.</li>
+  <li>Streamed responses in real time with <code>stream=True</code>.</li>
+</ul>
+
+<h2 id="clean-up">Clean up</h2>
+<p>Because ephemeral agents exist only in your local process, no cloud resources were created in Azure and no cloud cleanup is needed. Deactivate your virtual environment when finished:</p>
+<pre><code class="language-powershell">deactivate
+</code></pre>
+
+<h2 id="references">Further reading</h2>
+<ul>
+  <li><a href="https://learn.microsoft.com/azure/foundry/agents/quickstarts/responses-api?pivots=python">Microsoft Learn: Quickstart: Build agents using the Responses API</a></li>
+  <li><a href="https://github.com/microsoft/agent-framework">Microsoft Agent Framework on GitHub</a></li>
+  <li><a href="https://learn.microsoft.com/azure/foundry/agents/quickstarts/prompt-agent?tabs=python">Quickstart: Create a prompt agent</a></li>
+</ul>
+
+<div class="pager"><a href="04-prompt-agent.html">&#8592; Create a prompt agent</a><a href="04-prepare-documents.html">Prepare documents &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>
