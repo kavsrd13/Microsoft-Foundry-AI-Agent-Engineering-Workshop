@@ -28,8 +28,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 INDEX_NAME = os.environ["SEARCH_INDEX"]
-MANIFEST_PATH = Path("data/manifest.json")
-EXTRA_FILE = Path("data/service-hours.txt")
+MANIFEST_PATH = Path("manifest.json")
+EXTRA_FILE = Path("service-hours.txt")
 
 
 # --- Task 2 -----------------------------------------------------------------
@@ -70,7 +70,7 @@ def save_manifest(manifest):
 # --- Task 3 -----------------------------------------------------------------
 def read_all_sources():
     """Read every file listed in sources.json and cut it into chunks."""
-    sources = json.loads(Path("data/sources.json").read_text(encoding="utf-8"))
+    sources = json.loads(Path("sources.json").read_text(encoding="utf-8"))
     chunks = []
 
     for source in sources:
@@ -133,7 +133,7 @@ def add_extra_document(closing_time):
         encoding="utf-8",
     )
 
-    sources_path = Path("data/sources.json")
+    sources_path = Path("sources.json")
     sources = json.loads(sources_path.read_text(encoding="utf-8"))
 
     if not any(s["file"] == EXTRA_FILE.name for s in sources):
@@ -142,7 +142,7 @@ def add_extra_document(closing_time):
 
 
 def remove_extra_document():
-    sources_path = Path("data/sources.json")
+    sources_path = Path("sources.json")
     sources = json.loads(sources_path.read_text(encoding="utf-8"))
     sources = [s for s in sources if s["file"] != EXTRA_FILE.name]
     sources_path.write_text(json.dumps(sources, indent=2), encoding="utf-8")
@@ -193,8 +193,8 @@ def make_a_scanned_pdf():
     """Turn a normal PDF into an image-only one, so we have something to OCR."""
     print("\n=== Making a scanned document ===")
 
-    original_path = Path("data/benefits/acme-code-of-conduct.pdf")
-    scanned_path = Path("data/scanned-conduct.pdf")
+    original_path = Path("benefits/acme-code-of-conduct.pdf")
+    scanned_path = Path("scanned-conduct.pdf")
 
     with pymupdf.open(original_path) as original, pymupdf.open() as scanned:
         for page in original:
@@ -243,7 +243,7 @@ def clean_up(index_client):
         raise ValueError("SEARCH_INDEX must start with 'lab07-'")
     index_client.delete_index(INDEX_NAME)
     MANIFEST_PATH.unlink(missing_ok=True)
-    Path("data/scanned-conduct.pdf").unlink(missing_ok=True)
+    Path("scanned-conduct.pdf").unlink(missing_ok=True)
     print("deleted index", INDEX_NAME, "and local files")
 
 

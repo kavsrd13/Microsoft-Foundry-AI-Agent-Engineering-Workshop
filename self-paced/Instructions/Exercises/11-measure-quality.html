@@ -36,7 +36,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><pre><code class="language-text">SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net
 SEARCH_INDEX=lab11-YOUR-INITIALS
@@ -105,7 +105,7 @@ TEST_CASES = [
         ],
     ))
 
-    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
         chunks = json.load(file)
     search_client.upload_documents(chunks)
     print(f&quot;  uploaded {len(chunks)} chunks to {INDEX_NAME}&quot;)
@@ -344,7 +344,7 @@ def run_the_gate(retrieval_scores, answer_scores):
     print(&quot;\n=== The release gate ===&quot;)
 
     report = build_report(retrieval_scores, answer_scores, revision=&quot;v1&quot;)
-    with open(&quot;data/report.json&quot;, &quot;w&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;report.json&quot;, &quot;w&quot;, encoding=&quot;utf-8&quot;) as file:
         json.dump(report, file, indent=2)
 
     print(&quot;\n  Releasing v1 with v1&#x27;s evidence:&quot;)
@@ -371,7 +371,7 @@ def run_the_gate(retrieval_scores, answer_scores):
 <li><p>Count how many of the gate&#x27;s checks are about the <strong>evidence</strong> rather than the scores:</p>
 <table><thead><tr><th>Check</th><th>Why</th></tr></thead><tbody><tr><td><code>kind == &#x27;live&#x27;</code></td><td>A made-up fixture must never approve a release</td></tr><tr><td>Revision matches</td><td>Good scores for a different version are not evidence for this one</td></tr><tr><td>Less than 24 hours old</td><td>Yesterday&#x27;s results do not describe today&#x27;s code</td></tr><tr><td>Scores above threshold</td><td>The obvious one — and the least common reason gates fail</td></tr></tbody></table>
 <blockquote><p><strong>Note</strong>: In practice most release-gate failures are stale, partial or mismatched evidence, not low scores. Checking provenance is the bulk of the job.</p></blockquote></li>
-<li><p><strong>Try to defeat your own gate.</strong> Edit <code>data/report.json</code> by hand — bump a score, change the revision — then re-run just the gate check.</p>
+<li><p><strong>Try to defeat your own gate.</strong> Edit <code>report.json</code> by hand — bump a score, change the revision — then re-run just the gate check.</p>
 <blockquote class="warn"><p><strong>Caution</strong>: You can, easily. It is a JSON file on your disk. That is exactly why a real pipeline generates the report <strong>inside the trusted build job</strong>, on a protected branch, rather than accepting one someone uploads.</p></blockquote></li>
 <li><p>The finished file:</p>
 <details class="wholefile"><summary>Show the complete <code>measure_quality.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 11 - Measure whether the assistant is any good.
@@ -443,7 +443,7 @@ def set_up_the_index(index_client, search_client):
         ],
     ))
 
-    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
         chunks = json.load(file)
     search_client.upload_documents(chunks)
     print(f&quot;  uploaded {len(chunks)} chunks to {INDEX_NAME}&quot;)
@@ -639,7 +639,7 @@ def run_the_gate(retrieval_scores, answer_scores):
     print(&quot;\n=== The release gate ===&quot;)
 
     report = build_report(retrieval_scores, answer_scores, revision=&quot;v1&quot;)
-    with open(&quot;data/report.json&quot;, &quot;w&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;report.json&quot;, &quot;w&quot;, encoding=&quot;utf-8&quot;) as file:
         json.dump(report, file, indent=2)
 
     print(&quot;\n  Releasing v1 with v1&#x27;s evidence:&quot;)

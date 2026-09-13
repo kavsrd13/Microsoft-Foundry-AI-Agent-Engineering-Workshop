@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 """Offline HTTP integration: real Function handler behind a local test HTTP host."""
 import os
 import sys
@@ -6,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 import azure.functions as func
 
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent))
 from function_app import get_order
 from call_tool import get_order_status
 

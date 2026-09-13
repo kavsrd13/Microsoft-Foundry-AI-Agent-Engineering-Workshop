@@ -1,14 +1,14 @@
-"""Optional upstream sample downloads. https://github.com/Azure-Samples/azure-search-sample-data/tree/main/health-plan"""
+"""Optional upstream sample downloads. https://github.com/Azure-Samples/azure-search-sample-tree/main/health-plan"""
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-BASE = "https://raw.githubusercontent.com/Azure-Samples/azure-search-sample-data/main/health-plan/"
+BASE = "https://raw.githubusercontent.com/Azure-Samples/azure-search-sample-main/health-plan/"
 SAMPLES = {
     "Northwind_Standard_Benefits_Details.pdf": BASE + "Northwind_Standard_Benefits_Details.pdf",
     "Benefit_Options.pdf": BASE + "Benefit_Options.pdf",
     # The requested Invoice_1 binary is absent upstream; use the maintained invoice sample.
-    "Invoice_1.pdf": "https://raw.githubusercontent.com/Azure-Samples/document-intelligence-code-samples/main/Data/invoice/invoice.pdf",
+    "Invoice_1.pdf": "https://raw.githubusercontent.com/Azure-Samples/document-intelligence-code-samples/main/invoice/invoice.pdf",
 }
 
 

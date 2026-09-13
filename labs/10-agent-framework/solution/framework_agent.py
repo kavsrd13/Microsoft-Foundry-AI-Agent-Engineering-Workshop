@@ -54,7 +54,7 @@ async def the_same_thing_as_before(client):
 
 # --- Task 3: tools ----------------------------------------------------------
 def load_orders():
-    with open(ROOT / "data/orders.json", encoding="utf-8") as file:
+    with open(ROOT / "orders.json", encoding="utf-8") as file:
         return json.load(file)
 
 
@@ -98,8 +98,8 @@ async def a_conversation_that_survives_a_restart(client):
 
     # Save the whole session to a file, then throw the object away.
     saved = json.dumps(session.to_dict())
-    Path("data/session.json").write_text(saved, encoding="utf-8")
-    print("  saved the session to data/session.json")
+    Path("session.json").write_text(saved, encoding="utf-8")
+    print("  saved the session to session.json")
 
     # Rebuild it from the file. This is a different Python object.
     restored = AgentSession.from_dict(json.loads(saved))

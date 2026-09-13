@@ -52,7 +52,7 @@ def create_index_and_upload(index_client, search_client):
         ],
     ))
 
-    with open("data/chunks.json", encoding="utf-8") as file:
+    with open("chunks.json", encoding="utf-8") as file:
         chunks = json.load(file)
 
     search_client.upload_documents(chunks)

@@ -36,7 +36,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><p>Fill in <code>.env</code>. The two test user values must be <strong>real object IDs</strong> of two different users in your tenant:</p>
 <pre><code class="language-text">ENTRA_TENANT_ID=...

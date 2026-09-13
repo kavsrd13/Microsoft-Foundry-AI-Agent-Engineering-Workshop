@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 """Cloud access is enforced by platform Entra authentication and caller allowlist."""
 import json
 import base64
@@ -5,7 +8,7 @@ from pathlib import Path
 import azure.functions as func
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
-orders = json.loads((Path(__file__).parent / 'data/orders.json').read_text())
+orders = json.loads((Path(__file__).parent / 'orders.json').read_text())
 
 @app.route(route='orders/{order_id}', methods=['GET'])
 def get_order(req: func.HttpRequest) -> func.HttpResponse:

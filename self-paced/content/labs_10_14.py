@@ -126,7 +126,7 @@ LAB10 = {
                        "    restored = AgentSession.from_dict(json.loads(saved))"),
                  {"note": "The session became JSON and then became a different Python object. That is exactly "
                           "what a web application does between two requests — and what Exercise 08 stored in "
-                          "Cosmos. Compare `data/session.json` with what you saved there."}],
+                          "Cosmos. Compare `session.json` with what you saved there."}],
                 [{"whole_file": upto("10-agent-framework", "framework_agent.py", 4,
                                      "    asyncio.run(main())"),
                   "name": "framework_agent.py (functions so far)"}],
@@ -209,7 +209,7 @@ LAB10 = {
     ],
     "cleanup": [
         "Nothing was created in Azure — every agent used `store=False`.",
-        block("Remove-Item data/session.json -ErrorAction SilentlyContinue", "powershell"),
+        block("Remove-Item session.json -ErrorAction SilentlyContinue", "powershell"),
     ],
     "refs": [
         ("Agent Framework with Foundry",
@@ -391,7 +391,7 @@ LAB11 = {
                  ])},
                  {"note": "In practice most release-gate failures are stale, partial or mismatched evidence, "
                           "not low scores. Checking provenance is the bulk of the job."}],
-                ["**Try to defeat your own gate.** Edit `data/report.json` by hand — bump a score, change the "
+                ["**Try to defeat your own gate.** Edit `report.json` by hand — bump a score, change the "
                  "revision — then re-run just the gate check.",
                  {"warn": "You can, easily. It is a JSON file on your disk. That is exactly why a real "
                           "pipeline generates the report **inside the trusted build job**, on a protected "
@@ -991,7 +991,7 @@ LAB14 = {
                 [block("python secure_and_govern.py", "powershell"),
                  {"ok": "Every control reports PENDING, and the script says you are not ready."}],
                 ["That is deliberate.",
-                 {"note": "`data/control-evidence.json` ships with everything pending on purpose. A readiness "
+                 {"note": "`control-evidence.json` ships with everything pending on purpose. A readiness "
                           "script that passes out of the box is worse than no script at all — it manufactures "
                           "false confidence."}],
                 ["Look at what it demands before a control counts as done:",
@@ -1062,7 +1062,7 @@ LAB14 = {
     "cleanup": [
         "Nothing was created in Azure.",
         "Reverse any tenant changes you made for Task 6, using the names you recorded.",
-        block("Remove-Item data/redteam-results.json -ErrorAction SilentlyContinue", "powershell"),
+        block("Remove-Item redteam-results.json -ErrorAction SilentlyContinue", "powershell"),
     ],
     "refs": [
         ("Content Safety", "https://learn.microsoft.com/azure/ai-services/content-safety/quickstart-text"),

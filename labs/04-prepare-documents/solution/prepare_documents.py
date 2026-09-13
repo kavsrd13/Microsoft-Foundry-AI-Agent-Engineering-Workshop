@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PDF_FOLDER = Path("data/benefits")
+PDF_FOLDER = Path("benefits")
 
 
 # --- Task 2 -----------------------------------------------------------------
@@ -143,7 +143,7 @@ def build_chunk_records(client, strategy="paragraph"):
                     "allowed_groups": who_can_see_this(pdf_path.name),
                 })
 
-    output = Path("data/chunks.json")
+    output = Path("chunks.json")
     output.write_text(json.dumps(records, indent=2), encoding="utf-8")
 
     print(f"\nwrote {len(records)} chunks to {output}")

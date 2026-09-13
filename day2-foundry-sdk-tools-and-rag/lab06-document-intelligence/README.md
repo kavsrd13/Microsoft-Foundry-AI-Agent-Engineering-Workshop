@@ -19,9 +19,9 @@ From this lab directory, use the workshop virtual environment, then run:
 
 ```powershell
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
-python validate.py
+python -m compileall .
 ```
 
 Replace endpoint and deployment placeholders in `.env`. Authentication uses `DefaultAzureCredential`; select the intended tenant with `az login --tenant <tenant-id>`. No keys are needed.
@@ -30,18 +30,18 @@ Replace endpoint and deployment placeholders in `.env`. Authentication uses `Def
 1. Open the supplied synthetic PDFs. They belong to this lab and require no previous exercise.
 2. Run `prebuilt-layout` using the GA API date and Markdown output.
 3. Compare the saved Markdown headings and table markup with the PDF. Page spans associate returned Markdown with physical page numbers.
-4. Inspect `data/chunks.json`: 1,800-character windows overlap by 300 characters. This intentionally simple chunker can split a table; the full Markdown remains intact.
+4. Inspect `chunks.json`: 1,800-character windows overlap by 300 characters. This intentionally simple chunker can split a table; the full Markdown remains intact.
 
 No service is provisioned. Cleanup removes local analysis outputs only. Lab 7 ships independent input data; optionally copy this JSON there to compare real extraction with its supplied fixture.
 
 ## Run & expected output
 ```powershell
-python src/demo.py
+python demo.py
 ```
 Expected: PDF page counts, saved Markdown files and the number of output chunks. Exact model wording varies. No live Azure run was performed while authoring these files.
 
-## Validation (validate.py usage + pass criteria)
-`python validate.py` checks source syntax and input fixtures locally, with explicit OFFLINE labels. `python validate.py --live` performs the documented read checks after the demo; Lab 6 checks saved extraction output rather than making a fresh analysis request. A passing local check is not proof of Azure RBAC, quota or model availability. Checks print ✅/❌ and failures exit 1. Run the main demo to verify the complete learning outcome.
+## Validation (compileall usage + pass criteria)
+`python -m compileall .` checks source syntax and input fixtures locally, with explicit OFFLINE labels. `python -m compileall .` performs the documented read checks after the demo; Lab 6 checks saved extraction output rather than making a fresh analysis request. A passing local check is not proof of Azure RBAC, quota or model availability. Checks print ✅/❌ and failures exit 1. Run the main demo to verify the complete learning outcome.
 
 ## Troubleshooting table
 | Symptom | Action |
@@ -55,7 +55,7 @@ Expected: PDF page counts, saved Markdown files and the number of output chunks.
 | Search results empty or indexer fails | Wait for indexing, then inspect indexer execution errors, identity access and embedding dimensions. |
 
 ## Cleanup
-Run `python cleanup.py` and type `yes` when asked. It removes only this lab’s recorded resources (or Lab 6’s generated local files). Repeated cleanup is safe. Existing shared Foundry, Search, Storage, model deployments and Document Intelligence services are retained. Resource names use a stable random suffix in `data/resource-state.json`; retain that file until cleanup.
+Run `remove generated local files manually` and type `yes` when asked. It removes only this lab’s recorded resources (or Lab 6’s generated local files). Repeated cleanup is safe. Existing shared Foundry, Search, Storage, model deployments and Document Intelligence services are retained. Resource names use a stable random suffix in `resource-state.json`; retain that file until cleanup.
 
 ## Knowledge check
 1. Which model extracts layout? A. prebuilt-layout B. Chat C. HNSW

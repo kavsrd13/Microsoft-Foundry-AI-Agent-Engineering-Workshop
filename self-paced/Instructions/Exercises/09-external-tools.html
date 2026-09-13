@@ -36,7 +36,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><pre><code class="language-text">ORDER_TOOL_URL=http://localhost:7071/api/orders
 TOOL_SCOPE=api://YOUR-API-CLIENT-ID/.default
@@ -69,7 +69,7 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
 def load_orders():
-    with open(Path(__file__).parent.parent / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as f:
+    with open(Path(__file__).parent.parent / &quot;orders.json&quot;, encoding=&quot;utf-8&quot;) as f:
         return json.load(f)
 
 
@@ -347,8 +347,8 @@ if __name__ == &quot;__main__&quot;:
 </ol>
 <h2 id="task-6-which-connection-method">Task 6: Which connection method?</h2>
 <ol>
-<li><table><thead><tr><th>Method</th><th>How the tool is found</th><th>Best for</th></tr></thead><tbody><tr><td>Function calling</td><td>You write the schema (Exercise 03)</td><td>Tools your own app owns</td></tr><tr><td>MCP</td><td>Discovered at runtime</td><td>Evolving tool sets shared across agents</td></tr><tr><td>OpenAPI</td><td>A published contract — see <code>data/openapi.json</code></td><td>Existing REST APIs</td></tr><tr><td>Toolbox</td><td>Registered once, discovered by many agents</td><td>Reuse across a team</td></tr><tr><td>Logic Apps</td><td>A connector</td><td>Workflows across other business systems</td></tr></tbody></table></li>
-<li><p>Open <code>data/openapi.json</code> and find the security section:</p>
+<li><table><thead><tr><th>Method</th><th>How the tool is found</th><th>Best for</th></tr></thead><tbody><tr><td>Function calling</td><td>You write the schema (Exercise 03)</td><td>Tools your own app owns</td></tr><tr><td>MCP</td><td>Discovered at runtime</td><td>Evolving tool sets shared across agents</td></tr><tr><td>OpenAPI</td><td>A published contract — see <code>openapi.json</code></td><td>Existing REST APIs</td></tr><tr><td>Toolbox</td><td>Registered once, discovered by many agents</td><td>Reuse across a team</td></tr><tr><td>Logic Apps</td><td>A connector</td><td>Workflows across other business systems</td></tr></tbody></table></li>
+<li><p>Open <code>openapi.json</code> and find the security section:</p>
 <pre><code class="language-json">&quot;security&quot;: [{&quot;bearerAuth&quot;: []}]
 </code></pre>
 <blockquote class="warn"><p><strong>Caution</strong>: A schema <strong>declares</strong> that a token is required. It does not obtain one and it does not check one. Declaration and enforcement are different things, and only your Function does the second.</p></blockquote></li>

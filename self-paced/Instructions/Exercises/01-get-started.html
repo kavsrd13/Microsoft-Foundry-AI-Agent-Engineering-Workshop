@@ -39,7 +39,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 <pre><code class="language-powershell">py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><p>Sign in to Azure. Use the tenant your instructor gave you:</p>
 <pre><code class="language-powershell">az login --tenant YOUR-TENANT-ID
@@ -125,7 +125,7 @@ if __name__ == &quot;__main__&quot;:
     show_deployments(project)
 </code></pre></details></li>
 <li><p>If you got an error instead, find it here:</p>
-<table><thead><tr><th>What you saw</th><th>What it means</th></tr></thead><tbody><tr><td><code>KeyError: &#x27;PROJECT_ENDPOINT&#x27;</code></td><td>You did not copy <code>.env.example</code> to <code>.env</code>, or you are running from the wrong folder.</td></tr><tr><td><code>CredentialUnavailableError</code> or 401</td><td>Not signed in, or signed in to the wrong tenant. Run <code>az login --tenant ...</code> again.</td></tr><tr><td>403 Forbidden</td><td>You are signed in, but your account does not have a role on this project. Ask your instructor.</td></tr><tr><td>An empty list</td><td>The project has no model deployed yet.</td></tr></tbody></table></li>
+<table><thead><tr><th>What you saw</th><th>What it means</th></tr></thead><tbody><tr><td><code>KeyError: &#x27;PROJECT_ENDPOINT&#x27;</code></td><td>You did not copy <code>the shared workshop .env</code> to <code>.env</code>, or you are running from the wrong folder.</td></tr><tr><td><code>CredentialUnavailableError</code> or 401</td><td>Not signed in, or signed in to the wrong tenant. Run <code>az login --tenant ...</code> again.</td></tr><tr><td>403 Forbidden</td><td>You are signed in, but your account does not have a role on this project. Ask your instructor.</td></tr><tr><td>An empty list</td><td>The project has no model deployed yet.</td></tr></tbody></table></li>
 </ol>
 <h2 id="task-3-ask-a-question">Task 3: Ask a question</h2>
 <ol>

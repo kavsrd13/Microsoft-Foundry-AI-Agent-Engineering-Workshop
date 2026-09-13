@@ -2,7 +2,7 @@
 
 ## Status badges (GA/Preview/Prerelease)
 
-**GA:** Agent Framework 1.17.0; Foundry provider 1.12.0; Responses API. 
+**GA:** Agent Framework 1.17.0; Foundry provider 1.12.0; Responses API.
 The requested provider pin requires `azure-ai-projects>=2.2.0,<2.4.0`. This Day 4 lab deliberately pins **2.3.0**, rather than the incompatible 2.6.0 requested for Days 1–3. Use a separate environment. The umbrella `agent-framework` package installs additional integrations, including prerelease dependencies; GA framework status does not make every optional integration GA.
 
 ## Learning objectives
@@ -27,7 +27,7 @@ Run these commands from this lab folder in PowerShell:
 py -3.11 -m venv .venv
 .venv/Scripts/Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
 ```
 
@@ -35,9 +35,9 @@ Set `PROJECT_ENDPOINT` and `MODEL_DEPLOYMENT_NAME` in `.env`. Entra authenticati
 
 ## Guided walkthrough with numbered steps and code explanation
 
-1. Open `src/a_foundry_sdk.py`. `AIProjectClient` provides project access, `get_openai_client()` exposes Responses, and the application supplies the task directly. `store=False` avoids a retained response resource.
+1. Open `a_foundry_sdk.py`. `AIProjectClient` provides project access, `get_openai_client()` exposes Responses, and the application supplies the task directly. `store=False` avoids a retained response resource.
 2. Run the script and read its two-sentence answer. The model wording is nondeterministic; do not compare exact text.
-3. Open `src/b_agent_framework.py`. The same project client is passed to `FoundryChatClient`. `Agent.run()` wraps the same task. The asynchronous `main()` supports the framework's asynchronous execution model.
+3. Open `b_agent_framework.py`. The same project client is passed to `FoundryChatClient`. `Agent.run()` wraps the same task. The asynchronous `main()` supports the framework's asynchronous execution model.
 4. Compare the shared instruction and input strings. Neither example creates a persisted agent. The abstraction becomes useful when adding sessions, tools or workflows, not because a one-call example necessarily becomes shorter.
 
 | Dimension | Direct SDK | MAF |
@@ -51,17 +51,17 @@ Set `PROJECT_ENDPOINT` and `MODEL_DEPLOYMENT_NAME` in `.env`. Entra authenticati
 ## Run & expected output
 
 ```powershell
-python src/a_foundry_sdk.py
-python src/b_agent_framework.py
+python a_foundry_sdk.py
+python b_agent_framework.py
 ```
 
 Both scripts print a short explanation of source citation. Wording can differ; both use the same instruction and task.
 
-## Validation (validate.py usage + pass criteria)
+## Validation (compileall usage + pass criteria)
 
 ```powershell
-python validate.py
-python validate.py --live
+python -m compileall .
+python -m compileall .
 ```
 
 Offline mode checks syntax and installed provider presence; every check must print ✅ and exit 0. Live mode additionally verifies the configured deployment is visible using Entra authentication. It does not substitute for running the concept demo and checking the expected behaviour above. No live tenant execution was performed while authoring this repository.
@@ -71,7 +71,7 @@ Offline mode checks syntax and installed provider presence; every check must pri
 | Symptom | Likely cause | Action |
 |---|---|---|
 | pip ResolutionImpossible mentioning projects | Day 1–3 environment reused | Create the separate Day 4 environment and use this lab's requirements |
-| KeyError PROJECT_ENDPOINT | Missing .env field | Copy .env.example and populate the actual endpoint |
+| KeyError PROJECT_ENDPOINT | Missing .env field | Copy the shared workshop .env and populate the actual endpoint |
 | CredentialUnavailableError / 401 | No usable Entra login | Run az login in the intended tenant and retry |
 | 403 PermissionDenied | Project or inference role missing | Activate/assign the required scope, allow propagation, then retry |
 | 404 deployment not found | Catalogue model name used as deployment name | Copy the deployed model's deployment name from Foundry |
@@ -82,7 +82,7 @@ Offline mode checks syntax and installed provider presence; every check must pri
 ## Cleanup
 
 ```powershell
-python cleanup.py
+remove generated local files manually
 ```
 
 The core demo creates no named cloud agent, index or deployment; there is no get-or-create scaffolding to distract from the concept. Local files are overwritten safely on rerun. Cleanup prompts before deleting generated output and is safe twice.

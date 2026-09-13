@@ -1,6 +1,6 @@
 # Microsoft Foundry AI Agent Engineering Workshop
 
-**Fourteen hands-on exercises.** Connect to Foundry, build an agent that uses tools, turn a pile of PDFs
+**Fifteen hands-on exercises.** Connect to Foundry, build an agent that uses tools, turn a pile of PDFs
 into a grounded assistant that cites its sources and shows each person only what they may see, give it
 memory, measure whether it is any good, and decide whether it is safe to ship.
 
@@ -29,13 +29,15 @@ track you can paste the whole thing and carry on.
 | 07 | [Keep the index fresh](labs/07-keep-the-index-fresh) | 75 min | Add / change / delete, OCR |
 | 08 | [Give the agent memory](labs/08-agent-memory) | 90 min | Cosmos, TTL, what a partition key is not |
 | 09 | [Connect external tools](labs/09-external-tools) | 90 min | An HTTP tool with permissions, MCP |
+| 15 | [A tool hosted on Azure Functions](labs/15-azure-functions-tool) | 120 min | Standard-setup project via azd, queue-triggered Function, agent round trip |
 | 10 | [The Agent Framework](labs/10-agent-framework) | 90 min | Sessions, middleware, multi-agent workflows |
 | 11 | [Measure quality](labs/11-measure-quality) | 90 min | Retrieval metrics, a judge, a release gate |
 | 12 | [Observe and cost](labs/12-observe-and-cost) | 75 min | Tracing, token telemetry, failures |
 | 13 | [Build a chat app](labs/13-chat-app) | 120 min | Real sign-in, verified claims, streaming UI |
 | 14 | [Secure and govern](labs/14-secure-and-govern) | 75 min | Content safety, injection probes, readiness |
 
-About 20 hours of exercises. For a four-day delivery, run three or four a day.
+About 22 hours of exercises. For a four-day delivery, run three or four a day; Exercise 15 is a natural
+extension to 09 when a class needs the queue-based pattern.
 
 ## Before you begin
 
@@ -51,7 +53,8 @@ About 20 hours of exercises. For a four-day delivery, run three or four a day.
    packages deliberately — Exercise 10 in particular needs an older `azure-ai-projects` than the rest.
    One shared environment will break them.
 
-Each exercise folder holds its own `requirements.txt`, `.env.example`, `data/`, and a `solution/` folder
+Each exercise folder holds its own `requirements.txt` and uses the single shared `.env` file at the workshop root.
+The `solution/` folder contains finished working code where provided.
 with the finished working code to check yourself against.
 
 > **Note**: These exercises run against Azure resources your instructor or administrator supplies. Running

@@ -38,7 +38,7 @@ LAB05 = {
         "An **Azure AI Search** service with the **semantic ranker enabled**.",
         "**Search Service Contributor** and **Search Index Data Contributor** on it.",
         "An Azure OpenAI resource with `text-embedding-3-small`, and **Cognitive Services OpenAI User**.",
-        "Exercise 04 finished, or use the `data/chunks.json` already in this folder.",
+        "Exercise 04 finished, or use the `chunks.json` already in this folder.",
     ],
     "before_extra": [VENV_NOTE],
     "sections": [
@@ -296,7 +296,7 @@ LAB06 = {
                        "SEARCH_INDEX=lab06-YOUR-INITIALS\n"
                        "PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT\n"
                        "MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT", "text")],
-                ["**Open `data/chunks.json` and note which chunks are HR-only.** The leave policy chunks "
+                ["**Open `chunks.json` and note which chunks are HR-only.** The leave policy chunks "
                  "carry `hr-internal` only; the others carry both groups. So an HR officer should see strictly "
                  "more than front-counter staff."],
                 ["Create `grounded_agent.py` with the imports and the rules:",
@@ -510,7 +510,7 @@ LAB07 = {
                 [block("SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net\n"
                        "SEARCH_INDEX=lab07-YOUR-INITIALS\n"
                        "DOCUMENT_INTELLIGENCE_ENDPOINT=https://YOUR-DI.cognitiveservices.azure.com", "text")],
-                ["Look at `data/sources.json`. It is the list of documents that should be in the index — the "
+                ["Look at `sources.json`. It is the list of documents that should be in the index — the "
                  "single source of truth for what belongs there."],
                 ["Create `keep_fresh.py`:",
                  block('"""Keep the index fresh."""\n\n'
@@ -525,8 +525,8 @@ LAB07 = {
                        "from dotenv import load_dotenv\n\n"
                        "load_dotenv()\n\n"
                        'INDEX_NAME = os.environ["SEARCH_INDEX"]\n'
-                       'MANIFEST_PATH = Path("data/manifest.json")\n'
-                       'EXTRA_FILE = Path("data/service-hours.txt")')],
+                       'MANIFEST_PATH = Path("manifest.json")\n'
+                       'EXTRA_FILE = Path("service-hours.txt")')],
             ],
         },
         {
@@ -595,7 +595,7 @@ LAB07 = {
                 ["**If step 4 still says 4 pm**, the old chunk was not replaced. That is exactly the bug this "
                  "mechanism exists to prevent — a stale passage still sitting in the index, ready to be "
                  "quoted as current policy."],
-                ["**Try one more thing.** Delete `data/manifest.json` and run again.",
+                ["**Try one more thing.** Delete `manifest.json` and run again.",
                  {"ok": "Everything uploads again, because you threw away the memory of what was already "
                         "there."},
                  {"warn": "The manifest belongs with the index. If you ever rebuild the index, delete the "
@@ -1075,11 +1075,11 @@ LAB09 = {
                 [{"table": (["Method", "How the tool is found", "Best for"], [
                     ["Function calling", "You write the schema (Exercise 03)", "Tools your own app owns"],
                     ["MCP", "Discovered at runtime", "Evolving tool sets shared across agents"],
-                    ["OpenAPI", "A published contract — see `data/openapi.json`", "Existing REST APIs"],
+                    ["OpenAPI", "A published contract — see `openapi.json`", "Existing REST APIs"],
                     ["Toolbox", "Registered once, discovered by many agents", "Reuse across a team"],
                     ["Logic Apps", "A connector", "Workflows across other business systems"],
                 ])}],
-                ["Open `data/openapi.json` and find the security section:",
+                ["Open `openapi.json` and find the security section:",
                  block('"security": [{"bearerAuth": []}]', "json"),
                  {"warn": "A schema **declares** that a token is required. It does not obtain one and it does "
                           "not check one. Declaration and enforcement are different things, and only your "

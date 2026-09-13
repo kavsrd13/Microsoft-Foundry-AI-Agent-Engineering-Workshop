@@ -27,33 +27,33 @@ Australia East supports Foundry projects. Verify model, tool and evaluator avail
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
 ```
 
 3. Replace the placeholders in `.env`. A deployment name is not a model family name. Never commit `.env`.
-4. Run `python validate.py` before any service call.
+4. Run `python -m compileall .` before any service call.
 
 ## Guided walkthrough with numbered steps and code explanation
 
-1. Open the 20 rows in `data/qa_dataset.jsonl`. Each has a question, reference answer, context and expected source.
-2. Read `src/evaluate.py`. It generates an actual candidate answer from context; it does not copy the ground truth into the response field.
+1. Open the 20 rows in `qa_dataset.jsonl`. Each has a question, reference answer, context and expected source.
+2. Read `evaluate.py`. It generates an actual candidate answer from context; it does not copy the ground truth into the response field.
 3. Read the primary 1–5 rubric. A separate model call judges factual accuracy, completeness, citations and unsupported claims. Keep the rubric deployment distinct from the candidate when quota permits.
 4. Groundedness checks claims against context; relevance checks the question; fluency checks language; content safety uses the real service evaluator.
-5. Run all 20 rows and inspect both `data/scores.json` and `data/score-report.md`. A failure preserves the completed rows but the report is incomplete until 20 rows exist.
+5. Run all 20 rows and inspect both `scores.json` and `score-report.md`. A failure preserves the completed rows but the report is incomplete until 20 rows exist.
 6. Manually review the lowest scores and disagree with a judge where source evidence warrants it. No automatic production release threshold is claimed.
 
 ## Run & expected output
 
 ```powershell
-python src/evaluate.py
+python evaluate.py
 ```
 
 Expect `Evaluated 1/20` through `Evaluated 20/20`, then review the saved Markdown report. Scores are observations, not guaranteed values. Safety service unavailability is a failed live evaluation, never a fabricated passing score.
 
 ## Validation
 
-`python validate.py` checks local syntax and assets without Azure. `python validate.py --live` checks the saved live artefact after running the demo; it is not a new cloud call. Pass criteria: no local failures, and the explicit live evidence check passes. For Lab 12, the instructor must also verify the trace in Application Insights. No tenant execution was performed while building this repository.
+`python -m compileall .` checks local syntax and assets without Azure. `python -m compileall .` checks the saved live artefact after running the demo; it is not a new cloud call. Pass criteria: no local failures, and the explicit live evidence check passes. For Lab 12, the instructor must also verify the trace in Application Insights. No tenant execution was performed while building this repository.
 
 ## Troubleshooting table
 
@@ -69,7 +69,7 @@ Expect `Evaluated 1/20` through `Evaluated 20/20`, then review the saved Markdow
 
 ## Cleanup
 
-Run `python cleanup.py`. It lists only known lab artefacts and prompts before deleting them. Repeating cleanup is safe. Shared Azure infrastructure is not deleted. Follow the additional ownership notes in `data/cleanup-notes.md`.
+Run `remove generated local files manually`. It lists only known lab artefacts and prompts before deleting them. Repeating cleanup is safe. Shared Azure infrastructure is not deleted. Follow the additional ownership notes in `cleanup-notes.md`.
 
 ## Knowledge check
 

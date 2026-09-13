@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 """Lab 09, part 4 - Discover and call the tool over MCP.
 
 Notice that we never told this client what tools exist. It asks.

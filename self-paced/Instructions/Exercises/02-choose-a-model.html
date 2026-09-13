@@ -35,7 +35,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><p>Fill in <code>.env</code>:</p>
 <pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
@@ -225,7 +225,7 @@ def compare_embedding_sizes(embeddings_client):
     &quot;&quot;&quot;Embed the same sentences at two sizes and compare the rankings.&quot;&quot;&quot;
     print(&quot;\n=== Comparing embedding sizes ===&quot;)
 
-    with open(&quot;data/texts.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;texts.json&quot;, encoding=&quot;utf-8&quot;) as file:
         texts = json.load(file)
 
     question = texts[0]
@@ -357,7 +357,7 @@ def compare_embedding_sizes(embeddings_client):
     &quot;&quot;&quot;Embed the same sentences at two sizes and compare the rankings.&quot;&quot;&quot;
     print(&quot;\n=== Comparing embedding sizes ===&quot;)
 
-    with open(&quot;data/texts.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;texts.json&quot;, encoding=&quot;utf-8&quot;) as file:
         texts = json.load(file)
 
     question = texts[0]
@@ -441,13 +441,13 @@ if __name__ == &quot;__main__&quot;:
 </ol>
 <h2 id="task-5-send-a-picture">Task 5: Send a picture</h2>
 <ol>
-<li><p>Open <code>data/policy-page.png</code> and read the leave table yourself first, so you know the right answer before the model gives you one.</p></li>
+<li><p>Open <code>policy-page.png</code> and read the leave table yourself first, so you know the right answer before the model gives you one.</p></li>
 <li><p>Add the last function:</p>
 <pre><code class="language-python">def read_a_picture(client):
     &quot;&quot;&quot;Send an image to a vision-capable model.&quot;&quot;&quot;
     print(&quot;\n=== Reading a picture ===&quot;)
 
-    with open(&quot;data/policy-page.png&quot;, &quot;rb&quot;) as file:
+    with open(&quot;policy-page.png&quot;, &quot;rb&quot;) as file:
         encoded_image = base64.b64encode(file.read()).decode()
 
     response = client.responses.create(
@@ -563,7 +563,7 @@ def compare_embedding_sizes(embeddings_client):
     &quot;&quot;&quot;Embed the same sentences at two sizes and compare the rankings.&quot;&quot;&quot;
     print(&quot;\n=== Comparing embedding sizes ===&quot;)
 
-    with open(&quot;data/texts.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;texts.json&quot;, encoding=&quot;utf-8&quot;) as file:
         texts = json.load(file)
 
     question = texts[0]
@@ -617,7 +617,7 @@ def read_a_picture(client):
     &quot;&quot;&quot;Send an image to a vision-capable model.&quot;&quot;&quot;
     print(&quot;\n=== Reading a picture ===&quot;)
 
-    with open(&quot;data/policy-page.png&quot;, &quot;rb&quot;) as file:
+    with open(&quot;policy-page.png&quot;, &quot;rb&quot;) as file:
         encoded_image = base64.b64encode(file.read()).decode()
 
     response = client.responses.create(
@@ -681,7 +681,7 @@ if __name__ == &quot;__main__&quot;:
 <p>The habit worth keeping is the one in Task 2: decide what &quot;good&quot; means <em>before</em> you look at the output, then mark against it.</p>
 <h2 id="clean-up">Clean up</h2>
 <p>Nothing was created in Azure. Delete the local files if you want:</p>
-<pre><code class="language-powershell">Remove-Item data/model-results.json, data/embedding-results.json -ErrorAction SilentlyContinue
+<pre><code class="language-powershell">Remove-Item model-results.json, embedding-results.json -ErrorAction SilentlyContinue
 </code></pre>
 <h2 id="references">Further reading</h2>
 <ul><li><a href="https://learn.microsoft.com/azure/ai-foundry/openai/how-to/embeddings">Embeddings</a></li><li><a href="https://learn.microsoft.com/azure/ai-foundry/openai/how-to/deployment-types">Deployment types</a></li><li><a href="https://azure.microsoft.com/pricing/calculator/">Azure pricing calculator</a></li></ul>

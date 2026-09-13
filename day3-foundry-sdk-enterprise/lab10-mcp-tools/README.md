@@ -27,12 +27,12 @@ Australia East supports Foundry projects. Verify model, tool and evaluator avail
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
 ```
 
 3. Replace the placeholders in `.env`. A deployment name is not a model family name. Never commit `.env`.
-4. Run `python validate.py` before any service call.
+4. Run `python -m compileall .` before any service call.
 
 ## Guided walkthrough with numbered steps and code explanation
 
@@ -40,19 +40,19 @@ az login
 2. Run the script. Review the server, tool and arguments in each approval request. Type `n` on the first run to demonstrate refusal.
 3. Repeat and type `y` only for a public documentation query. The continuation sends the approval request ID with the decision.
 4. Observe the final answer. The loop handles further approval requests; it never approves them silently.
-5. Read `data/illustrative-output.md` during endpoint failure. Replace it with a genuine sanitised capture only after a successful instructor rehearsal.
+5. Read `illustrative-output.md` during endpoint failure. Replace it with a genuine sanitised capture only after a successful instructor rehearsal.
 
 ## Run & expected output
 
 ```powershell
-python src/demo.py
+python demo.py
 ```
 
-Expect an approval prompt showing `microsoft_learn`, `microsoft_docs_search` and public query arguments, followed by an answer if approved. A denied call must not execute. Real output is saved in `data/live-output.txt`.
+Expect an approval prompt showing `microsoft_learn`, `microsoft_docs_search` and public query arguments, followed by an answer if approved. A denied call must not execute. Real output is saved in `live-output.txt`.
 
 ## Validation
 
-`python validate.py` checks local syntax and assets without Azure. `python validate.py --live` checks the saved live artefact after running the demo; it is not a new cloud call. Pass criteria: no local failures, and the explicit live evidence check passes. For Lab 12, the instructor must also verify the trace in Application Insights. No tenant execution was performed while building this repository.
+`python -m compileall .` checks local syntax and assets without Azure. `python -m compileall .` checks the saved live artefact after running the demo; it is not a new cloud call. Pass criteria: no local failures, and the explicit live evidence check passes. For Lab 12, the instructor must also verify the trace in Application Insights. No tenant execution was performed while building this repository.
 
 ## Troubleshooting table
 
@@ -68,7 +68,7 @@ Expect an approval prompt showing `microsoft_learn`, `microsoft_docs_search` and
 
 ## Cleanup
 
-Run `python cleanup.py`. It lists only known lab artefacts and prompts before deleting them. Repeating cleanup is safe. Shared Azure infrastructure is not deleted. Follow the additional ownership notes in `data/cleanup-notes.md`.
+Run `remove generated local files manually`. It lists only known lab artefacts and prompts before deleting them. Repeating cleanup is safe. Shared Azure infrastructure is not deleted. Follow the additional ownership notes in `cleanup-notes.md`.
 
 ## Knowledge check
 

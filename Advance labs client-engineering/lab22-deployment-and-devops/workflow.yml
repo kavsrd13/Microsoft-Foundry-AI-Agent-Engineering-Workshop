@@ -1,0 +1,63 @@
+name: Evaluate and deploy resident assistant
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, test, prod]
+        required: true
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: resident-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      PROJECT_ENDPOINT: ${{ vars.PROJECT_ENDPOINT }}
+      MODEL_DEPLOYMENT: ${{ vars.MODEL_DEPLOYMENT }}
+      JUDGE_DEPLOYMENT: ${{ vars.JUDGE_DEPLOYMENT }}
+      SEARCH_ENDPOINT: ${{ vars.SEARCH_ENDPOINT }}
+      SEARCH_INDEX: ${{ vars.SEARCH_INDEX }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Offline authenticated app tests
+        run: |
+          python -m venv .app-tests
+          .app-tests/bin/pip install -r "foundry-agent-workshop/Advance labs client-engineering/lab21-agent-web-application/requirements.txt"
+          .app-tests/bin/python -m compileall "foundry-agent-workshop/Advance labs client-engineering/lab21-agent-web-application"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Evaluate reference RAG and gate this revision
+        run: |
+          python -m venv .evaluation
+          .evaluation/bin/pip install -r "foundry-agent-workshop/Advance labs client-engineering/lab23-evaluation-and-operations/requirements.txt"
+          .evaluation/bin/python "foundry-agent-workshop/Advance labs client-engineering/lab23-evaluation-and-operations/evaluate.py" --revision "$GITHUB_SHA" --output report.json
+          .evaluation/bin/python "foundry-agent-workshop/Advance labs client-engineering/lab23-evaluation-and-operations/gate.py" --report report.json --revision "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-${{ inputs.environment }}-${{ github.sha }}
+          path: report.json
+          if-no-files-found: warn
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.WEB_APP_NAME }}
+          package: "foundry-agent-workshop/Advance labs client-engineering/lab21-agent-web-application"
+      - uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.FUNCTION_APP_NAME }}
+          package: "foundry-agent-workshop/Advance labs client-engineering/lab22-deployment-and-devops/function"
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true

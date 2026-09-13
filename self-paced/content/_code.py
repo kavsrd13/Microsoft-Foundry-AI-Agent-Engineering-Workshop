@@ -16,11 +16,15 @@ LABS = Path(__file__).resolve().parents[2] / "labs"
 _MARKER = re.compile(r"^# --- (Task \d+|Main)[^\n]*$", re.M)
 
 
-def load(lab, filename):
-    """The whole solution file, as text."""
-    path = LABS / lab / "solution" / filename
+def load(lab, filename, folder="solution"):
+    """The whole solution file, as text.
+
+    `folder` defaults to the lab's solution/ directory. Pass another folder
+    (for example "app") when the tested file lives elsewhere in the lab.
+    """
+    path = LABS / lab / folder / filename
     if not path.is_file():
-        raise FileNotFoundError(f"no solution file at {path}")
+        raise FileNotFoundError(f"no file at {path}")
     return path.read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
@@ -70,9 +74,9 @@ def upto(lab, filename, last_task, main_body):
     return "\n\n\n".join(pieces) + "\n"
 
 
-def whole(lab, filename, name=None, lang="python"):
-    """A `whole_file` block holding the finished solution file verbatim."""
-    return {"whole_file": load(lab, filename).strip("\n"),
+def whole(lab, filename, name=None, lang="python", folder="solution"):
+    """A `whole_file` block holding the finished file verbatim."""
+    return {"whole_file": load(lab, filename, folder).strip("\n"),
             "name": name or filename, "lang": lang}
 
 

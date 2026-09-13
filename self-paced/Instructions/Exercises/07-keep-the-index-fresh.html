@@ -35,13 +35,13 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><pre><code class="language-text">SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net
 SEARCH_INDEX=lab07-YOUR-INITIALS
 DOCUMENT_INTELLIGENCE_ENDPOINT=https://YOUR-DI.cognitiveservices.azure.com
 </code></pre></li>
-<li><p>Look at <code>data/sources.json</code>. It is the list of documents that should be in the index — the single source of truth for what belongs there.</p></li>
+<li><p>Look at <code>sources.json</code>. It is the list of documents that should be in the index — the single source of truth for what belongs there.</p></li>
 <li><p>Create <code>keep_fresh.py</code>:</p>
 <pre><code class="language-python">&quot;&quot;&quot;Keep the index fresh.&quot;&quot;&quot;
 
@@ -65,8 +65,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
-MANIFEST_PATH = Path(&quot;data/manifest.json&quot;)
-EXTRA_FILE = Path(&quot;data/service-hours.txt&quot;)
+MANIFEST_PATH = Path(&quot;manifest.json&quot;)
+EXTRA_FILE = Path(&quot;service-hours.txt&quot;)
 </code></pre></li>
 </ol>
 <h2 id="task-2-fingerprint-everything">Task 2: Fingerprint everything</h2>
@@ -115,7 +115,7 @@ def save_manifest(manifest):
 <li><p>Add these two functions:</p>
 <pre><code class="language-python">def read_all_sources():
     &quot;&quot;&quot;Read every file listed in sources.json and cut it into chunks.&quot;&quot;&quot;
-    sources = json.loads(Path(&quot;data/sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
+    sources = json.loads(Path(&quot;sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
     chunks = []
 
     for source in sources:
@@ -185,7 +185,7 @@ def sync(search_client, label):
         encoding=&quot;utf-8&quot;,
     )
 
-    sources_path = Path(&quot;data/sources.json&quot;)
+    sources_path = Path(&quot;sources.json&quot;)
     sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
 
     if not any(s[&quot;file&quot;] == EXTRA_FILE.name for s in sources):
@@ -194,7 +194,7 @@ def sync(search_client, label):
 
 
 def remove_extra_document():
-    sources_path = Path(&quot;data/sources.json&quot;)
+    sources_path = Path(&quot;sources.json&quot;)
     sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
     sources = [s for s in sources if s[&quot;file&quot;] != EXTRA_FILE.name]
     sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
@@ -262,7 +262,7 @@ def run_the_whole_cycle(search_client):
 <table><thead><tr><th>Step</th><th>What you should see</th><th>Why it matters</th></tr></thead><tbody><tr><td>1. First sync</td><td>Everything uploaded</td><td>A cold start</td></tr><tr><td>2. Sync again, unchanged</td><td><strong>0 uploaded, 0 deleted</strong></td><td>This is your bill. No changes, no work.</td></tr><tr><td>3. Add a document</td><td>1 uploaded, answer says <strong>4 pm</strong></td><td>New content is findable</td></tr><tr><td>4. Change it</td><td>1 uploaded, answer says <strong>6 pm</strong></td><td>The old text must not survive</td></tr><tr><td>5. Delete it</td><td>1 deleted, <strong>no answer at all</strong></td><td>Withdrawn content must disappear</td></tr></tbody></table>
 <blockquote class="ok"><p><strong>Check</strong>: Step 2 and step 5 are the two that matter. Step 2 is cost; step 5 is correctness.</p></blockquote></li>
 <li><p><strong>If step 4 still says 4 pm</strong>, the old chunk was not replaced. That is exactly the bug this mechanism exists to prevent — a stale passage still sitting in the index, ready to be quoted as current policy.</p></li>
-<li><p><strong>Try one more thing.</strong> Delete <code>data/manifest.json</code> and run again.</p>
+<li><p><strong>Try one more thing.</strong> Delete <code>manifest.json</code> and run again.</p>
 <blockquote class="ok"><p><strong>Check</strong>: Everything uploads again, because you threw away the memory of what was already there.</p></blockquote>
 <blockquote class="warn"><p><strong>Caution</strong>: The manifest belongs with the index. If you ever rebuild the index, delete the manifest too, or sync will think work is already done that is not.</p></blockquote></li>
 <li><details class="wholefile"><summary>Show the complete <code>keep_fresh.py</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 07 - Keep the index fresh.
@@ -295,8 +295,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
-MANIFEST_PATH = Path(&quot;data/manifest.json&quot;)
-EXTRA_FILE = Path(&quot;data/service-hours.txt&quot;)
+MANIFEST_PATH = Path(&quot;manifest.json&quot;)
+EXTRA_FILE = Path(&quot;service-hours.txt&quot;)
 
 
 # --- Task 2 -----------------------------------------------------------------
@@ -337,7 +337,7 @@ def save_manifest(manifest):
 # --- Task 3 -----------------------------------------------------------------
 def read_all_sources():
     &quot;&quot;&quot;Read every file listed in sources.json and cut it into chunks.&quot;&quot;&quot;
-    sources = json.loads(Path(&quot;data/sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
+    sources = json.loads(Path(&quot;sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
     chunks = []
 
     for source in sources:
@@ -400,7 +400,7 @@ def add_extra_document(closing_time):
         encoding=&quot;utf-8&quot;,
     )
 
-    sources_path = Path(&quot;data/sources.json&quot;)
+    sources_path = Path(&quot;sources.json&quot;)
     sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
 
     if not any(s[&quot;file&quot;] == EXTRA_FILE.name for s in sources):
@@ -409,7 +409,7 @@ def add_extra_document(closing_time):
 
 
 def remove_extra_document():
-    sources_path = Path(&quot;data/sources.json&quot;)
+    sources_path = Path(&quot;sources.json&quot;)
     sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
     sources = [s for s in sources if s[&quot;file&quot;] != EXTRA_FILE.name]
     sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
@@ -481,8 +481,8 @@ if __name__ == &quot;__main__&quot;:
     &quot;&quot;&quot;Turn a normal PDF into an image-only one, so we have something to OCR.&quot;&quot;&quot;
     print(&quot;\n=== Making a scanned document ===&quot;)
 
-    original_path = Path(&quot;data/benefits/acme-code-of-conduct.pdf&quot;)
-    scanned_path = Path(&quot;data/scanned-conduct.pdf&quot;)
+    original_path = Path(&quot;benefits/acme-code-of-conduct.pdf&quot;)
+    scanned_path = Path(&quot;scanned-conduct.pdf&quot;)
 
     with pymupdf.open(original_path) as original, pymupdf.open() as scanned:
         for page in original:
@@ -564,8 +564,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 INDEX_NAME = os.environ[&quot;SEARCH_INDEX&quot;]
-MANIFEST_PATH = Path(&quot;data/manifest.json&quot;)
-EXTRA_FILE = Path(&quot;data/service-hours.txt&quot;)
+MANIFEST_PATH = Path(&quot;manifest.json&quot;)
+EXTRA_FILE = Path(&quot;service-hours.txt&quot;)
 
 
 # --- Task 2 -----------------------------------------------------------------
@@ -606,7 +606,7 @@ def save_manifest(manifest):
 # --- Task 3 -----------------------------------------------------------------
 def read_all_sources():
     &quot;&quot;&quot;Read every file listed in sources.json and cut it into chunks.&quot;&quot;&quot;
-    sources = json.loads(Path(&quot;data/sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
+    sources = json.loads(Path(&quot;sources.json&quot;).read_text(encoding=&quot;utf-8&quot;))
     chunks = []
 
     for source in sources:
@@ -669,7 +669,7 @@ def add_extra_document(closing_time):
         encoding=&quot;utf-8&quot;,
     )
 
-    sources_path = Path(&quot;data/sources.json&quot;)
+    sources_path = Path(&quot;sources.json&quot;)
     sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
 
     if not any(s[&quot;file&quot;] == EXTRA_FILE.name for s in sources):
@@ -678,7 +678,7 @@ def add_extra_document(closing_time):
 
 
 def remove_extra_document():
-    sources_path = Path(&quot;data/sources.json&quot;)
+    sources_path = Path(&quot;sources.json&quot;)
     sources = json.loads(sources_path.read_text(encoding=&quot;utf-8&quot;))
     sources = [s for s in sources if s[&quot;file&quot;] != EXTRA_FILE.name]
     sources_path.write_text(json.dumps(sources, indent=2), encoding=&quot;utf-8&quot;)
@@ -729,8 +729,8 @@ def make_a_scanned_pdf():
     &quot;&quot;&quot;Turn a normal PDF into an image-only one, so we have something to OCR.&quot;&quot;&quot;
     print(&quot;\n=== Making a scanned document ===&quot;)
 
-    original_path = Path(&quot;data/benefits/acme-code-of-conduct.pdf&quot;)
-    scanned_path = Path(&quot;data/scanned-conduct.pdf&quot;)
+    original_path = Path(&quot;benefits/acme-code-of-conduct.pdf&quot;)
+    scanned_path = Path(&quot;scanned-conduct.pdf&quot;)
 
     with pymupdf.open(original_path) as original, pymupdf.open() as scanned:
         for page in original:
@@ -779,7 +779,7 @@ def clean_up(index_client):
         raise ValueError(&quot;SEARCH_INDEX must start with &#x27;lab07-&#x27;&quot;)
     index_client.delete_index(INDEX_NAME)
     MANIFEST_PATH.unlink(missing_ok=True)
-    Path(&quot;data/scanned-conduct.pdf&quot;).unlink(missing_ok=True)
+    Path(&quot;scanned-conduct.pdf&quot;).unlink(missing_ok=True)
     print(&quot;deleted index&quot;, INDEX_NAME, &quot;and local files&quot;)
 
 

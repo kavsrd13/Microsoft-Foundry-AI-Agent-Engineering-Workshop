@@ -19,15 +19,15 @@ From this lab directory, use the workshop virtual environment, then run:
 
 ```powershell
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
-python validate.py
+python -m compileall .
 ```
 
 Replace endpoint and deployment placeholders in `.env`. Authentication uses `DefaultAzureCredential`; select the intended tenant with `az login --tenant <tenant-id>`. No keys are needed.
 
 ## Guided walkthrough with numbered steps and code explanation
-1. Read the three short functions over `data/orders.json`.
+1. Read the three short functions over `orders.json`.
 2. Read each `FunctionTool` JSON schema: the model receives names and argument types, not executable Python.
 3. Run the demo. The application matches the returned function name, invokes it, then returns a `function_call_output` with the original call ID.
 4. Observe the final answer after the tool loop completes. Repeat execution reuses the recorded agent version.
@@ -36,12 +36,12 @@ The ten-minute run expiry applies to classic thread/run APIs. This lab uses Resp
 
 ## Run & expected output
 ```powershell
-python src/demo.py
+python demo.py
 ```
 Expected: Tool names and synthetic order facts, followed by a natural-language answer. Exact model wording varies. No live Azure run was performed while authoring these files.
 
-## Validation (validate.py usage + pass criteria)
-`python validate.py` checks source syntax and input fixtures locally, with explicit OFFLINE labels. `python validate.py --live` performs the documented read checks after the demo; Lab 6 checks saved extraction output rather than making a fresh analysis request. A passing local check is not proof of Azure RBAC, quota or model availability. Checks print ✅/❌ and failures exit 1. Run the main demo to verify the complete learning outcome.
+## Validation (compileall usage + pass criteria)
+`python -m compileall .` checks source syntax and input fixtures locally, with explicit OFFLINE labels. `python -m compileall .` performs the documented read checks after the demo; Lab 6 checks saved extraction output rather than making a fresh analysis request. A passing local check is not proof of Azure RBAC, quota or model availability. Checks print ✅/❌ and failures exit 1. Run the main demo to verify the complete learning outcome.
 
 ## Troubleshooting table
 | Symptom | Action |
@@ -55,7 +55,7 @@ Expected: Tool names and synthetic order facts, followed by a natural-language a
 | Search results empty or indexer fails | Wait for indexing, then inspect indexer execution errors, identity access and embedding dimensions. |
 
 ## Cleanup
-Run `python cleanup.py` and type `yes` when asked. It removes only this lab’s recorded resources (or Lab 6’s generated local files). Repeated cleanup is safe. Existing shared Foundry, Search, Storage, model deployments and Document Intelligence services are retained. Resource names use a stable random suffix in `data/resource-state.json`; retain that file until cleanup.
+Run `remove generated local files manually` and type `yes` when asked. It removes only this lab’s recorded resources (or Lab 6’s generated local files). Repeated cleanup is safe. Existing shared Foundry, Search, Storage, model deployments and Document Intelligence services are retained. Resource names use a stable random suffix in `resource-state.json`; retain that file until cleanup.
 
 ## Knowledge check
 1. Who executes a Python tool? A. Model B. Application C. Search

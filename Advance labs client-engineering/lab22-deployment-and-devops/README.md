@@ -20,7 +20,7 @@ Choose an approved Australian region and compatible **regional** model deploymen
 
 ## Setup steps
 
-From this lab directory, review `src/infra/resources.bicep`, then:
+From this lab directory, review `infra/resources.bicep`, then:
 
 ```powershell
 az login
@@ -33,12 +33,12 @@ azd env set ENTRA_SPA_CLIENT_ID YOUR-SPA-ID
 azd env set MODEL_NAME YOUR-AVAILABLE-MODEL
 azd env set MODEL_VERSION YOUR-AVAILABLE-VERSION
 azd env set MODEL_SKU Standard
-az bicep build --file src/infra/main.bicep
+az bicep build --file infra/main.bicep
 azd provision
 azd deploy
 ```
 
-`azure.yaml` explicitly sets `infra.path: src/infra`; its web service points to Lab21. Review provision's change summary before accepting. The template creates Blob Storage, Search, application-owned Cosmos memory, Foundry/project/chat deployment, Application Insights/Logs, an App Service plan, web app and Function app. It does **not** attach Cosmos as Foundry's `enterprise_memory`. The web app currently reads Search and calls the model; Cosmos and the Function are separate teaching components until explicitly integrated.
+`azure.yaml` explicitly sets `infra.path: infra`; its web service points to Lab21. Review provision's change summary before accepting. The template creates Blob Storage, Search, application-owned Cosmos memory, Foundry/project/chat deployment, Application Insights/Logs, an App Service plan, web app and Function app. It does **not** attach Cosmos as Foundry's `enterprise_memory`. The web app currently reads Search and calls the model; Cosmos and the Function are separate teaching components until explicitly integrated.
 
 ## Guided walkthrough with numbered steps and code explanation
 
@@ -46,8 +46,8 @@ azd deploy
 2. Configure the deployed HTTPS origin as the SPA redirect URI. Seed the new `resident-records` Search index with Lab21's documented ACL fields using the ingestion lab, mapping fields explicitly. Give only the ingestion identity write permissions. An empty provisioned Search service cannot answer questions.
 3. Open the app; prove different authorised source IDs for two users. Keep token values out of evidence. This live access test is required in addition to mocked tests.
 4. Call the deployed `/api/collection` Function using its function key in the `x-functions-key` header from a server-side client. A request without the key must fail. This sample tool returns synthetic data; follow Lab20 for Entra-authenticated production tool hosting. Never place a Function key in browser code or source control.
-5. Follow [CI and environment promotion](src/CI-CD.md). The workflow runs Lab21 offline tests and the **reference RAG** evaluator from Lab23 before deployment. A passing evaluator does not certify the deployed app, ACLs or network.
-6. Follow [publishing and hosting alternatives](src/PUBLISHING.md). Record the version, endpoint/channel, access result and rollback target separately.
+5. Follow [CI and environment promotion](CI-CD.md). The workflow runs Lab21 offline tests and the **reference RAG** evaluator from Lab23 before deployment. A passing evaluator does not certify the deployed app, ACLs or network.
+6. Follow [publishing and hosting alternatives](PUBLISHING.md). Record the version, endpoint/channel, access result and rollback target separately.
 
 ## Run & expected output
 
@@ -55,7 +55,7 @@ azd deploy
 
 ## Validation
 
-Run `python -m pip install -r requirements.txt`, then `python validate.py`; compile Bicep separately. Run Lab21 `validate.py` in its own environment. Live evidence: deployment resource IDs, successful authenticated stream, two-user ACL test, keyless Function rejection, CI gate rejection of a failed report, test deployment commit and approved promotion. Never substitute a hand-edited report for a live evaluation. CI and Azure deployment remain tenant-rehearsal requirements.
+Run `python -m pip install -r requirements.txt`, then `python -m compileall .`; compile Bicep separately. Run Lab21 `compileall` in its own environment. Live evidence: deployment resource IDs, successful authenticated stream, two-user ACL test, keyless Function rejection, CI gate rejection of a failed report, test deployment commit and approved promotion. Never substitute a hand-edited report for a live evaluation. CI and Azure deployment remain tenant-rehearsal requirements.
 
 ## Troubleshooting
 
@@ -63,7 +63,7 @@ Model/SKU unavailable: choose another approved compatible deployment, not an arb
 
 ## Cleanup
 
-Stop local processes. For an isolated workshop environment run `azd down` from this lab after confirming its environment/resource group; it removes billable resources and data. Do not target a shared resource group. Remove workshop-only Entra registrations, federated credentials and GitHub environments separately. `cleanup.py` is informational and does not delete Azure resources.
+Stop local processes. For an isolated workshop environment run `azd down` from this lab after confirming its environment/resource group; it removes billable resources and data. Do not target a shared resource group. Remove workshop-only Entra registrations, federated credentials and GitHub environments separately. `manual cleanup instructions` is informational and does not delete Azure resources.
 
 ## Knowledge check (3 MCQs with answer key)
 

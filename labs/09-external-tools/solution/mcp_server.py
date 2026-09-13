@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 """Lab 09, part 3 - Publish the tool over MCP.
 
 MCP lets any MCP-speaking client discover and call your tool without you

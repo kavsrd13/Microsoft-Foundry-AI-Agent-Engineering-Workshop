@@ -29,11 +29,11 @@ The following per-lab files are authoritative; install each independently. Lab21
 
 | Lab | Requirements |
 |---|---|
-| 17 | [requirements.txt](client-engineering/lab17-models-embeddings-and-architecture/requirements.txt) |
-| 18 | [requirements.txt](client-engineering/lab18-end-to-end-rag/requirements.txt) |
-| 19 | [requirements.txt](client-engineering/lab19-cosmos-state-and-vectors/requirements.txt) |
-| 20 | [requirements.txt](client-engineering/lab20-hosted-tools-and-integrations/requirements.txt) |
-| 21 | [requirements.txt](client-engineering/lab21-agent-web-application/requirements.txt) |
-| 22 | [requirements.txt](client-engineering/lab22-deployment-and-devops/requirements.txt) |
-| 23 | [requirements.txt](client-engineering/lab23-evaluation-and-operations/requirements.txt) |
-| 24 | [requirements.txt](client-engineering/lab24-enterprise-security-and-governance/requirements.txt) |
+| 17 | [requirements.txt](Advance labs client-engineering/lab17-models-embeddings-and-architecture/requirements.txt) |
+| 18 | [requirements.txt](Advance labs client-engineering/lab18-end-to-end-rag/requirements.txt) |
+| 19 | [requirements.txt](Advance labs client-engineering/lab19-cosmos-state-and-vectors/requirements.txt) |
+| 20 | [requirements.txt](Advance labs client-engineering/lab20-hosted-tools-and-integrations/requirements.txt) |
+| 21 | [requirements.txt](Advance labs client-engineering/lab21-agent-web-application/requirements.txt) |
+| 22 | [requirements.txt](Advance labs client-engineering/lab22-deployment-and-devops/requirements.txt) |
+| 23 | [requirements.txt](Advance labs client-engineering/lab23-evaluation-and-operations/requirements.txt) |
+| 24 | [requirements.txt](Advance labs client-engineering/lab24-enterprise-security-and-governance/requirements.txt) |

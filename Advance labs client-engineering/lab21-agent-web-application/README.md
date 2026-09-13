@@ -24,11 +24,11 @@ From this lab folder:
 
 ```powershell
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 # Edit public IDs/endpoints in .env. Never put model keys in the HTML.
 az login
 # Instructor: set two test-user object IDs and a new lab21- index in .env.
-python src/seed_index.py
+python seed_index.py
 python -m uvicorn src.app:app --host 127.0.0.1 --port 8000
 ```
 
@@ -49,14 +49,14 @@ Open http://localhost:8000, sign in, then ask about an indexed record. Only publ
 After sign-in, ask about an indexed record. Expect a source-ID list followed by streamed answer text. `/chat` rejects a missing token with 401. When no authorised evidence exists the assistant should say it lacks evidence. The browser marks a stream without the completion event as incomplete.
 
 ## Validation
-Run `python validate.py`. This is an **offline mocked smoke test**, not proof of real Entra, Search or Foundry execution. Live evidence: two actual user access outcomes, a rejected missing/wrong-audience/expired token, and one completed stream. A failed stream requires retry; this teaching app omits reconnect, quotas and durable chat history. It never accepts `X-MS-CLIENT-PRINCIPAL` or arbitrary user IDs as authentication.
+Run `python -m compileall .`. This is an **offline mocked smoke test**, not proof of real Entra, Search or Foundry execution. Live evidence: two actual user access outcomes, a rejected missing/wrong-audience/expired token, and one completed stream. A failed stream requires retry; this teaching app omits reconnect, quotas and durable chat history. It never accepts `X-MS-CLIENT-PRINCIPAL` or arbitrary user IDs as authentication.
 
 ## Troubleshooting
 
 For 401 check tenant, audience, v2 token and delegated scope. For group-overage 403 configure application-assigned group claims; never bypass the check. Search 404 means the index is absent or misnamed. Search/model 403 requires the service identity's data-plane role. Sign in again when an access token expires; automatic token renewal is omitted from this teaching UI.
 
 ## Cleanup
-Lab22 hosts this application. Keep HTTPS, validated access tokens and managed service identities. Add per-user rate limits, timeouts, approved logging, deployment testing and accessibility review before real residents use it. `python cleanup.py` creates/deletes nothing; stop the server with Ctrl+C. In Search, delete only the dedicated `lab21-` index you created after confirming its name. Remove only workshop-owned Entra registrations after recording their IDs.
+Lab22 hosts this application. Keep HTTPS, validated access tokens and managed service identities. Add per-user rate limits, timeouts, approved logging, deployment testing and accessibility review before real residents use it. `remove generated local files manually` creates/deletes nothing; stop the server with Ctrl+C. In Search, delete only the dedicated `lab21-` index you created after confirming its name. Remove only workshop-owned Entra registrations after recording their IDs.
 
 ## Knowledge check (3 MCQs with answer key)
 

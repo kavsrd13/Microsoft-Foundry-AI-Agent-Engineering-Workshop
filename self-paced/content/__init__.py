@@ -5,9 +5,11 @@ Every code block shown on a page is sliced out of the matching file in
 real pinned SDKs, and unit-tested for its pure logic. See `_code.py`.
 """
 
-from . import labs_01_04, labs_05_09, labs_10_14
+from . import labs_01_04, labs_05_09, labs_10_14, labs_15
 
-LABS = labs_01_04.LABS + labs_05_09.LABS + labs_10_14.LABS
+# Exercise 15 extends Exercise 09 (external tools), so it sits in the Day 3
+# group directly after it rather than at the end.
+LABS = labs_01_04.LABS + labs_05_09.LABS + labs_15.LABS + labs_10_14.LABS
 
 GROUPS = [
     ("Day 1 — Foundations and your first agent",
@@ -54,15 +56,17 @@ MODULE_MAP = [
      "[08](Instructions/Exercises/08-agent-memory.html), "
      "[10](Instructions/Exercises/10-agent-framework.html)"),
 
-    ("**6. Tools, functions and multi-agent orchestration** — function calling, Azure Functions hosting, MCP, "
-     "OpenAPI, workflows",
+    ("**6. Tools, functions and multi-agent orchestration** — function calling, Azure Functions hosting "
+     "(HTTP and queue-based), MCP, OpenAPI, workflows",
      "[03](Instructions/Exercises/03-first-agent.html), "
      "[09](Instructions/Exercises/09-external-tools.html), "
+     "[15](Instructions/Exercises/15-azure-functions-tool.html), "
      "[10](Instructions/Exercises/10-agent-framework.html)"),
 
-    ("**7. Deployment and DevOps** — a custom app with streaming, managed identity, infrastructure as code, "
-     "evaluation gates in a pipeline",
+    ("**7. Deployment and DevOps** — a custom app with streaming, managed identity, infrastructure as code "
+     "(azd + Bicep for a standard-setup project), evaluation gates in a pipeline",
      "[09](Instructions/Exercises/09-external-tools.html), "
+     "[15](Instructions/Exercises/15-azure-functions-tool.html), "
      "[13](Instructions/Exercises/13-chat-app.html)"),
 
     ("**8. Production** — evaluation and release gates, OpenTelemetry and Application Insights, token and "

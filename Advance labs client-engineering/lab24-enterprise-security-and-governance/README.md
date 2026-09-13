@@ -13,7 +13,7 @@ Content Safety text API: GA. Agent ID, Conditional Access, Control Plane and sec
 
 ## Prerequisites (roles, resources, quota)
 
-Python3.11+, Azure CLI login, the service endpoints named in `.env.example`, supported model quota and least-privilege data-plane access. Use an independent instructor-supplied environment. Cloud setup and tenant integrations are separate from offline validation. 
+Python3.11+, Azure CLI login, the service endpoints named in `the shared workshop .env`, supported model quota and least-privilege data-plane access. Use an independent instructor-supplied environment. Cloud setup and tenant integrations are separate from offline validation.
 
 ## Australian/residency note
 
@@ -27,35 +27,35 @@ From this lab directory:
 py -3.11 -m venv .venv
 .venv/Scripts/Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
-python validate.py
+python -m compileall .
 ```
 
 Populate `.env` with endpoints and actual deployment names. No service keys are used. OpenAI client `api_key=token` in the embedding example is an Entra token callback, not a stored API key.
 
 ## Guided walkthrough with numbered steps and code explanation
 
-1. Open `data/enterprise-exercises.md`. Select a disposable lab environment and assign an evidence owner to each exercise. Never apply tenant-wide blocking policies as a classroom shortcut.
-2. Run `python src/network_check.py YOUR-SEARCH.search.windows.net YOUR-COSMOS.documents.azure.com` from the deployed runtime or its network. Compare DNS inside/outside the private network, resource public access settings and an unauthorised request. Private DNS alone is not proof of private-only access.
-3. Run `python src/content_safety.py` against a supported Content Safety resource with Entra Cognitive Services User permissions. Inspect category scores for the benign input. This confirms API mechanics, not harmful-content coverage.
-4. Run `python src/redteam.py` against your synthetic candidate. Review the normal, direct-injection, retrieved-record injection and unsupported-question answers. Record canary exposures and factual mistakes. The exact-string probe is deliberately small and not equivalent to the managed Red Teaming Agent; the guide includes a separate managed scan exercise.
+1. Open `enterprise-exercises.md`. Select a disposable lab environment and assign an evidence owner to each exercise. Never apply tenant-wide blocking policies as a classroom shortcut.
+2. Run `python network_check.py YOUR-SEARCH.search.windows.net YOUR-COSMOS.documents.azure.com` from the deployed runtime or its network. Compare DNS inside/outside the private network, resource public access settings and an unauthorised request. Private DNS alone is not proof of private-only access.
+3. Run `python content_safety.py` against a supported Content Safety resource with Entra Cognitive Services User permissions. Inspect category scores for the benign input. This confirms API mechanics, not harmful-content coverage.
+4. Run `python redteam.py` against your synthetic candidate. Review the normal, direct-injection, retrieved-record injection and unsupported-question answers. Record canary exposures and factual mistakes. The exact-string probe is deliberately small and not equivalent to the managed Red Teaming Agent; the guide includes a separate managed scan exercise.
 5. Complete Entra Agent ID, Conditional Access report-only, Defender, Purview, guardrails and Control Plane exercises in the guide when the tenant and permissions support them. Each requires an observed event or control result, not a checkbox that the feature exists.
-6. Copy `data/control-evidence.json` to a private local working file, add verified status plus owner/evidence/date only after observing each result, then run `python src/readiness.py --evidence YOUR-EVIDENCE.json`. The bundled template intentionally fails readiness. Document unresolved actions rather than inventing evidence.
+6. Copy `control-evidence.json` to a private local working file, add verified status plus owner/evidence/date only after observing each result, then run `python readiness.py --evidence YOUR-EVIDENCE.json`. The bundled template intentionally fails readiness. Document unresolved actions rather than inventing evidence.
 
 ## Run & expected output
 
 ```powershell
-python src/content_safety.py
-python src/redteam.py
-python src/readiness.py
+python content_safety.py
+python redteam.py
+python readiness.py
 ```
 
 DNS evidence, category scores, a synthetic probe report and pending readiness controls. Tenant exercises produce their own evidence; this repository contains no claimed Defender/Purview/Conditional Access activation.
 
 ## Validation
 
-`python validate.py` checks local source and the named deterministic mechanics. It prints PASS/FAIL and exits nonzero on failure. Follow the walkthrough for live evidence; offline validation does not contact Azure or certify production controls.
+`python -m compileall .` checks local source and the named deterministic mechanics. It prints PASS/FAIL and exits nonzero on failure. Follow the walkthrough for live evidence; offline validation does not contact Azure or certify production controls.
 
 ## Troubleshooting
 
@@ -70,7 +70,7 @@ DNS evidence, category scores, a synthetic probe report and pending readiness co
 
 ## Cleanup
 
-Run `python cleanup.py` for this lab's generated local reports. It prompts and is safe to repeat. Shared services are instructor-owned. Reverse any scoped tenant changes you created using the recorded resource names; no blanket subscription or tenant deletion. Optional local model caches are managed through the Local SDK rather than deleting unrelated cache folders.
+Run `remove generated local files manually` for this lab's generated local reports. It prompts and is safe to repeat. Shared services are instructor-owned. Reverse any scoped tenant changes you created using the recorded resource names; no blanket subscription or tenant deletion. Optional local model caches are managed through the Local SDK rather than deleting unrelated cache folders.
 
 ## Knowledge check (3 MCQs with answer key)
 

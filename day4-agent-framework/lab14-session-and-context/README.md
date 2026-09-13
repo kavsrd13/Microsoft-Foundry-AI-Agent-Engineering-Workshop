@@ -2,7 +2,7 @@
 
 ## Status badges (GA/Preview/Prerelease)
 
-**GA:** Agent Framework 1.17.0; Foundry provider 1.12.0; Responses API. 
+**GA:** Agent Framework 1.17.0; Foundry provider 1.12.0; Responses API.
 The requested provider pin requires `azure-ai-projects>=2.2.0,<2.4.0`. This Day 4 lab deliberately pins **2.3.0**, rather than the incompatible 2.6.0 requested for Days 1–3. Use a separate environment. The umbrella `agent-framework` package installs additional integrations, including prerelease dependencies; GA framework status does not make every optional integration GA.
 
 ## Learning objectives
@@ -28,7 +28,7 @@ Run these commands from this lab folder in PowerShell:
 py -3.11 -m venv .venv
 .venv/Scripts/Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
 ```
 
@@ -36,26 +36,26 @@ Set `PROJECT_ENDPOINT` and `MODEL_DEPLOYMENT_NAME` in `.env`. Entra authenticati
 
 ## Guided walkthrough with numbered steps and code explanation
 
-1. Read the first two records in `data/user_preferences.json`. These are synthetic profiles, not authenticated identities.
+1. Read the first two records in `user_preferences.json`. These are synthetic profiles, not authenticated identities.
 2. Inspect `Preferences.before_run()`. The provider chooses a profile using `session.state['user_id']` and contributes language, tone and channel instructions. Only the hook needed for this lesson is implemented.
 3. The first run supplies `ACME-204`. `InMemoryHistoryProvider` puts messages inside session state. `store=False` keeps model history local to this demo.
-4. Serialise the session to `data/session.json`, reconstruct it with `AgentSession.from_dict()`, and ask for the case reference. This explicitly demonstrates persistence across a save/load boundary.
+4. Serialise the session to `session.json`, reconstruct it with `AgentSession.from_dict()`, and ask for the case reference. This explicitly demonstrates persistence across a save/load boundary.
 5. A new session selects the second user. It receives that profile's preferences but must not know the first user's reference. In a real application, derive the user identity from a trusted sign-in; a request-supplied user ID is not authorisation.
 6. Inspect the saved JSON. It contains synthetic conversation content and should be treated as sensitive if replaced with real data. This is a small classroom file, not a production session database.
 
 ## Run & expected output
 
 ```powershell
-python src/demo.py
+python demo.py
 ```
 
 The restored session should answer ACME-204. The second user should not know that reference. Style follows each profile; exact wording varies.
 
-## Validation (validate.py usage + pass criteria)
+## Validation (compileall usage + pass criteria)
 
 ```powershell
-python validate.py
-python validate.py --live
+python -m compileall .
+python -m compileall .
 ```
 
 Offline mode checks syntax and installed provider presence; every check must print ✅ and exit 0. Live mode additionally verifies the configured deployment is visible using Entra authentication. It does not substitute for running the concept demo and checking the expected behaviour above. No live tenant execution was performed while authoring this repository.
@@ -65,7 +65,7 @@ Offline mode checks syntax and installed provider presence; every check must pri
 | Symptom | Likely cause | Action |
 |---|---|---|
 | pip ResolutionImpossible mentioning projects | Day 1–3 environment reused | Create the separate Day 4 environment and use this lab's requirements |
-| KeyError PROJECT_ENDPOINT | Missing .env field | Copy .env.example and populate the actual endpoint |
+| KeyError PROJECT_ENDPOINT | Missing .env field | Copy the shared workshop .env and populate the actual endpoint |
 | CredentialUnavailableError / 401 | No usable Entra login | Run az login in the intended tenant and retry |
 | 403 PermissionDenied | Project or inference role missing | Activate/assign the required scope, allow propagation, then retry |
 | 404 deployment not found | Catalogue model name used as deployment name | Copy the deployed model's deployment name from Foundry |
@@ -76,7 +76,7 @@ Offline mode checks syntax and installed provider presence; every check must pri
 ## Cleanup
 
 ```powershell
-python cleanup.py
+remove generated local files manually
 ```
 
 The core demo creates no named cloud agent, index or deployment; there is no get-or-create scaffolding to distract from the concept. Local files are overwritten safely on rerun. Cleanup prompts before deleting generated output and is safe twice.

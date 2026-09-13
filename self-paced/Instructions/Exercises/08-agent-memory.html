@@ -43,7 +43,7 @@ az cosmosdb sql container create -g $rg -a $account -d workshop-memory `
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><pre><code class="language-text">COSMOS_ENDPOINT=https://YOUR-ACCOUNT.documents.azure.com:443/
 </code></pre></li>

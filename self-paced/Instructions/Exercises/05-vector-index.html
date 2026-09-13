@@ -28,7 +28,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 <h3>What you will do</h3>
 <ul><li>Describe an index: which fields are searchable, filterable, and which holds a vector.</li><li>Turn text into vectors and upload them.</li><li>Run keyword, vector, hybrid and semantic searches and compare what comes back.</li><li>Explain what the semantic ranker adds on top of hybrid.</li></ul>
 <h3>Prerequisites</h3>
-<ul><li>An <strong>Azure AI Search</strong> service with the <strong>semantic ranker enabled</strong>.</li><li><strong>Search Service Contributor</strong> and <strong>Search Index Data Contributor</strong> on it.</li><li>An Azure OpenAI resource with <code>text-embedding-3-small</code>, and <strong>Cognitive Services OpenAI User</strong>.</li><li>Exercise 04 finished, or use the <code>data/chunks.json</code> already in this folder.</li></ul>
+<ul><li>An <strong>Azure AI Search</strong> service with the <strong>semantic ranker enabled</strong>.</li><li><strong>Search Service Contributor</strong> and <strong>Search Index Data Contributor</strong> on it.</li><li>An Azure OpenAI resource with <code>text-embedding-3-small</code>, and <strong>Cognitive Services OpenAI User</strong>.</li><li>Exercise 04 finished, or use the <code>chunks.json</code> already in this folder.</li></ul>
 <blockquote class="warn"><p><strong>Caution</strong>: Make a <strong>new virtual environment for every exercise</strong>. The exercises pin different versions of the same packages on purpose, and one shared environment will break them.</p></blockquote>
 <h2 id="task-1-set-up">Task 1: Set up</h2>
 <ol>
@@ -36,7 +36,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><p>Fill in <code>.env</code>. <strong>Put your initials in the index name</strong> so you do not collide with anyone:</p>
 <pre><code class="language-text">SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net
@@ -252,7 +252,7 @@ def upload_the_chunks(search_client, embeddings_client):
     &quot;&quot;&quot;Embed every chunk and put it in the index.&quot;&quot;&quot;
     print(&quot;\n=== Uploading chunks ===&quot;)
 
-    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
         chunks = json.load(file)
 
     documents = []
@@ -400,7 +400,7 @@ def upload_the_chunks(search_client, embeddings_client):
     &quot;&quot;&quot;Embed every chunk and put it in the index.&quot;&quot;&quot;
     print(&quot;\n=== Uploading chunks ===&quot;)
 
-    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
         chunks = json.load(file)
 
     documents = []
@@ -601,7 +601,7 @@ def upload_the_chunks(search_client, embeddings_client):
     &quot;&quot;&quot;Embed every chunk and put it in the index.&quot;&quot;&quot;
     print(&quot;\n=== Uploading chunks ===&quot;)
 
-    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
         chunks = json.load(file)
 
     documents = []

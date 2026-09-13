@@ -28,7 +28,7 @@ Run these commands from this lab folder in PowerShell:
 py -3.11 -m venv .venv
 .venv/Scripts/Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
 ```
 
@@ -36,30 +36,30 @@ Set `PROJECT_ENDPOINT` and `MODEL_DEPLOYMENT_NAME` in `.env`. Entra authenticati
 
 ## Guided walkthrough with numbered steps and code explanation
 
-1. Run `src/workflows.py`. Both builders create real framework workflow graphs over retriever, analyst and writer agents. All three receive the synthetic order dataset.
+1. Run `workflows.py`. Both builders create real framework workflow graphs over retriever, analyst and writer agents. All three receive the synthetic order dataset.
 2. In the sequential graph, each later participant sees earlier messages. The writer can use the analyst's conclusions. In the concurrent graph, the three agents work independently on the same initial input; its combined output is not the same dependency pipeline.
-3. Inspect `data/timings.json`. Compare measured elapsed seconds and output usefulness. Concurrency can improve latency, but throttling and network variability can reverse the result. A single run is not a benchmark.
-4. Start `src/host.py`, then invoke it from a second terminal with `src/invoke_local.py`. The local Responses adapter is an HTTP server, while inference still calls Azure with Entra credentials.
-5. Read `src/DEPLOY.md` and inspect `src/deploy/azure.yaml` before any cloud action. The deployment uses a separate lab environment, Python 3.13, the official Foundry azd provider and Responses protocol.
+3. Inspect `timings.json`. Compare measured elapsed seconds and output usefulness. Concurrency can improve latency, but throttling and network variability can reverse the result. A single run is not a benchmark.
+4. Start `host.py`, then invoke it from a second terminal with `invoke_local.py`. The local Responses adapter is an HTTP server, while inference still calls Azure with Entra credentials.
+5. Read `DEPLOY.md` and inspect `deploy/azure.yaml` before any cloud action. The deployment uses a separate lab environment, Python 3.13, the official Foundry azd provider and Responses protocol.
 6. Only after an instructor verifies region, model/SKU availability, costs and roles, follow `azd provision` → `azd deploy` → `azd ai agent invoke`. Missing Project Manager access makes this an instructor demonstration; all participants can complete local work.
 7. Stop the local server and remove its lab-owned state. For deployed resources, review the dedicated environment and use `azd down` as described in the deployment guide. No deployment has been executed during repository authoring.
 
 ## Run & expected output
 
 ```powershell
-python src/workflows.py
-python src/host.py
+python workflows.py
+python host.py
 # In a second terminal in this lab:
-python src/invoke_local.py
+python invoke_local.py
 ```
 
 Actual workflow output and measured seconds are printed. The server listens on port 8088; the local invocation returns Responses JSON. These are expected behaviours, not recorded cloud evidence.
 
-## Validation (validate.py usage + pass criteria)
+## Validation (compileall usage + pass criteria)
 
 ```powershell
-python validate.py
-python validate.py --live
+python -m compileall .
+python -m compileall .
 ```
 
 Offline mode checks syntax and installed provider presence; every check must print ✅ and exit 0. Live mode additionally verifies the configured deployment is visible using Entra authentication. It does not substitute for running the concept demo and checking the expected behaviour above. No live tenant execution was performed while authoring this repository.
@@ -69,7 +69,7 @@ Offline mode checks syntax and installed provider presence; every check must pri
 | Symptom | Likely cause | Action |
 |---|---|---|
 | pip ResolutionImpossible mentioning projects | Day 1–3 environment reused | Create the separate Day 4 environment and use this lab's requirements |
-| KeyError PROJECT_ENDPOINT | Missing .env field | Copy .env.example and populate the actual endpoint |
+| KeyError PROJECT_ENDPOINT | Missing .env field | Copy the shared workshop .env and populate the actual endpoint |
 | CredentialUnavailableError / 401 | No usable Entra login | Run az login in the intended tenant and retry |
 | 403 PermissionDenied | Project or inference role missing | Activate/assign the required scope, allow propagation, then retry |
 | 404 deployment not found | Catalogue model name used as deployment name | Copy the deployed model's deployment name from Foundry |
@@ -80,10 +80,10 @@ Offline mode checks syntax and installed provider presence; every check must pri
 ## Cleanup
 
 ```powershell
-python cleanup.py
+remove generated local files manually
 ```
 
-The core demo creates no named cloud agent, index or deployment; there is no get-or-create scaffolding to distract from the concept. Local files are overwritten safely on rerun. Cleanup prompts before deleting generated output and is safe twice. Lab 16 hosting has separate state and deployment cleanup in `src/DEPLOY.md`; never delete a shared classroom project.
+The core demo creates no named cloud agent, index or deployment; there is no get-or-create scaffolding to distract from the concept. Local files are overwritten safely on rerun. Cleanup prompts before deleting generated output and is safe twice. Lab 16 hosting has separate state and deployment cleanup in `DEPLOY.md`; never delete a shared classroom project.
 
 ## Knowledge check (3 MCQs with answer key)
 

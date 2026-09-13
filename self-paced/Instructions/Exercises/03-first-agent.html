@@ -35,14 +35,14 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><p>Fill in <code>.env</code>. **Put your own initials in <code>YOUR_INITIALS</code>** so your agent does not collide with anyone else&#x27;s in a shared project:</p>
 <pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
 MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
 YOUR_INITIALS=xx
 </code></pre></li>
-<li><p>Open <code>data/orders.json</code> and look at one record. Twenty-five synthetic orders, each with an id, a customer, a status and a total. No real people.</p></li>
+<li><p>Open <code>orders.json</code> and look at one record. Twenty-five synthetic orders, each with an id, a customer, a status and a total. No real people.</p></li>
 <li><p>Create <code>my_agent.py</code> and start it:</p>
 <pre><code class="language-python">&quot;&quot;&quot;My first agent.&quot;&quot;&quot;
 
@@ -208,7 +208,7 @@ if __name__ == &quot;__main__&quot;:
 <ol>
 <li><p>Add the functions and their descriptions:</p>
 <pre><code class="language-python">def load_orders():
-    with open(&quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
         return json.load(file)
 
 
@@ -426,7 +426,7 @@ def ask_the_agent(project):
 
 # --- Task 4: the three tools ------------------------------------------------
 def load_orders():
-    with open(&quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
         return json.load(file)
 
 

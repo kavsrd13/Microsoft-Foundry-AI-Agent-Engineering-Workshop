@@ -67,7 +67,7 @@ def set_up_the_index(index_client, search_client):
         ],
     ))
 
-    with open("data/chunks.json", encoding="utf-8") as file:
+    with open("chunks.json", encoding="utf-8") as file:
         chunks = json.load(file)
     search_client.upload_documents(chunks)
     print(f"  uploaded {len(chunks)} chunks to {INDEX_NAME}")
@@ -263,7 +263,7 @@ def run_the_gate(retrieval_scores, answer_scores):
     print("\n=== The release gate ===")
 
     report = build_report(retrieval_scores, answer_scores, revision="v1")
-    with open("data/report.json", "w", encoding="utf-8") as file:
+    with open("report.json", "w", encoding="utf-8") as file:
         json.dump(report, file, indent=2)
 
     print("\n  Releasing v1 with v1's evidence:")

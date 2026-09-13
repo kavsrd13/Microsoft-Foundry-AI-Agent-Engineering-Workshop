@@ -36,7 +36,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre>
 <blockquote><p><strong>Tip</strong>: Installing the framework pulls in a lot of packages and takes a couple of minutes. Let it finish.</p></blockquote></li>
 <li><pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
@@ -117,7 +117,7 @@ if __name__ == &quot;__main__&quot;:
 <ol>
 <li><p>Add these three functions:</p>
 <pre><code class="language-python">def load_orders():
-    with open(ROOT / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(ROOT / &quot;orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
         return json.load(file)
 
 
@@ -165,8 +165,8 @@ def get_order_total(order_id: str) -&gt; float:
 
     # Save the whole session to a file, then throw the object away.
     saved = json.dumps(session.to_dict())
-    Path(&quot;data/session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
-    print(&quot;  saved the session to data/session.json&quot;)
+    Path(&quot;session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
+    print(&quot;  saved the session to session.json&quot;)
 
     # Rebuild it from the file. This is a different Python object.
     restored = AgentSession.from_dict(json.loads(saved))
@@ -188,7 +188,7 @@ def get_order_total(order_id: str) -&gt; float:
 <pre><code class="language-python">    saved = json.dumps(session.to_dict())
     restored = AgentSession.from_dict(json.loads(saved))
 </code></pre>
-<blockquote><p><strong>Note</strong>: The session became JSON and then became a different Python object. That is exactly what a web application does between two requests — and what Exercise 08 stored in Cosmos. Compare <code>data/session.json</code> with what you saved there.</p></blockquote></li>
+<blockquote><p><strong>Note</strong>: The session became JSON and then became a different Python object. That is exactly what a web application does between two requests — and what Exercise 08 stored in Cosmos. Compare <code>session.json</code> with what you saved there.</p></blockquote></li>
 <li><details class="wholefile"><summary>Show the complete <code>framework_agent.py (functions so far)</code> after this task</summary><pre><code class="language-python">&quot;&quot;&quot;Lab 10 - The Microsoft Agent Framework.
 
 Everything so far used the Foundry SDK directly. The Agent Framework sits on
@@ -245,7 +245,7 @@ async def the_same_thing_as_before(client):
 
 # --- Task 3: tools ----------------------------------------------------------
 def load_orders():
-    with open(ROOT / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(ROOT / &quot;orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
         return json.load(file)
 
 
@@ -289,8 +289,8 @@ async def a_conversation_that_survives_a_restart(client):
 
     # Save the whole session to a file, then throw the object away.
     saved = json.dumps(session.to_dict())
-    Path(&quot;data/session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
-    print(&quot;  saved the session to data/session.json&quot;)
+    Path(&quot;session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
+    print(&quot;  saved the session to session.json&quot;)
 
     # Rebuild it from the file. This is a different Python object.
     restored = AgentSession.from_dict(json.loads(saved))
@@ -481,7 +481,7 @@ async def the_same_thing_as_before(client):
 
 # --- Task 3: tools ----------------------------------------------------------
 def load_orders():
-    with open(ROOT / &quot;data/orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(ROOT / &quot;orders.json&quot;, encoding=&quot;utf-8&quot;) as file:
         return json.load(file)
 
 
@@ -525,8 +525,8 @@ async def a_conversation_that_survives_a_restart(client):
 
     # Save the whole session to a file, then throw the object away.
     saved = json.dumps(session.to_dict())
-    Path(&quot;data/session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
-    print(&quot;  saved the session to data/session.json&quot;)
+    Path(&quot;session.json&quot;).write_text(saved, encoding=&quot;utf-8&quot;)
+    print(&quot;  saved the session to session.json&quot;)
 
     # Rebuild it from the file. This is a different Python object.
     restored = AgentSession.from_dict(json.loads(saved))
@@ -660,7 +660,7 @@ if __name__ == &quot;__main__&quot;:
 <p>The framework is worth adopting when you need these things — not because it is fewer lines, because for one call it is not.</p>
 <h2 id="clean-up">Clean up</h2>
 <p>Nothing was created in Azure — every agent used <code>store=False</code>.</p>
-<pre><code class="language-powershell">Remove-Item data/session.json -ErrorAction SilentlyContinue
+<pre><code class="language-powershell">Remove-Item session.json -ErrorAction SilentlyContinue
 </code></pre>
 <h2 id="references">Further reading</h2>
 <ul><li><a href="https://learn.microsoft.com/agent-framework/integrations/by-component/model-providers/microsoft-foundry">Agent Framework with Foundry</a></li><li><a href="https://learn.microsoft.com/agent-framework/agents/middleware/">Middleware</a></li><li><a href="https://learn.microsoft.com/agent-framework/workflows/orchestrations/">Workflow orchestrations</a></li></ul>

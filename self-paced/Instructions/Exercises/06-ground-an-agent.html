@@ -35,14 +35,14 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><pre><code class="language-text">SEARCH_ENDPOINT=https://YOUR-SEARCH.search.windows.net
 SEARCH_INDEX=lab06-YOUR-INITIALS
 PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
 MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
 </code></pre></li>
-<li><p>**Open <code>data/chunks.json</code> and note which chunks are HR-only.** The leave policy chunks carry <code>hr-internal</code> only; the others carry both groups. So an HR officer should see strictly more than front-counter staff.</p></li>
+<li><p>**Open <code>chunks.json</code> and note which chunks are HR-only.** The leave policy chunks carry <code>hr-internal</code> only; the others carry both groups. So an HR officer should see strictly more than front-counter staff.</p></li>
 <li><p>Create <code>grounded_agent.py</code> with the imports and the rules:</p>
 <pre><code class="language-python">&quot;&quot;&quot;Ground an agent in real documents.&quot;&quot;&quot;
 
@@ -92,7 +92,7 @@ GROUNDING_RULES = (
         ],
     ))
 
-    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
         chunks = json.load(file)
 
     search_client.upload_documents(chunks)
@@ -322,7 +322,7 @@ def create_index_and_upload(index_client, search_client):
         ],
     ))
 
-    with open(&quot;data/chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
+    with open(&quot;chunks.json&quot;, encoding=&quot;utf-8&quot;) as file:
         chunks = json.load(file)
 
     search_client.upload_documents(chunks)

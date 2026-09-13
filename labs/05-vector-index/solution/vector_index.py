@@ -99,7 +99,7 @@ def upload_the_chunks(search_client, embeddings_client):
     """Embed every chunk and put it in the index."""
     print("\n=== Uploading chunks ===")
 
-    with open("data/chunks.json", encoding="utf-8") as file:
+    with open("chunks.json", encoding="utf-8") as file:
         chunks = json.load(file)
 
     documents = []

@@ -446,7 +446,7 @@ LAB02 = {
         {
             "h2": "Task 5: Send a picture",
             "steps": [
-                ["Open `data/policy-page.png` and read the leave table yourself first, so you know the right "
+                ["Open `policy-page.png` and read the leave table yourself first, so you know the right "
                  "answer before the model gives you one."],
                 ["Add the last function:",
                  block(task("02-choose-a-model", "choose_a_model.py", 5))],
@@ -498,7 +498,7 @@ LAB02 = {
     ],
     "cleanup": [
         "Nothing was created in Azure. Delete the local files if you want:",
-        block("Remove-Item data/model-results.json, data/embedding-results.json "
+        block("Remove-Item model-results.json, embedding-results.json "
               "-ErrorAction SilentlyContinue", "powershell"),
     ],
     "refs": [
@@ -552,7 +552,7 @@ LAB03 = {
                  block("PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT\n"
                        "MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT\n"
                        "YOUR_INITIALS=xx", "text")],
-                ["Open `data/orders.json` and look at one record. Twenty-five synthetic orders, each with an "
+                ["Open `orders.json` and look at one record. Twenty-five synthetic orders, each with an "
                  "id, a customer, a status and a total. No real people."],
                 ["Create `my_agent.py` and start it:",
                  block('"""My first agent."""\n\n'
@@ -760,7 +760,7 @@ LAB04 = {
                 [block("cd labs/04-prepare-documents\n" + SETUP, "powershell")],
                 ["Fill in the one value:",
                  block("DOCUMENT_INTELLIGENCE_ENDPOINT=https://YOUR-DI.cognitiveservices.azure.com", "text")],
-                ["**Open the three PDFs in `data/benefits/` and read them.** They are short. You cannot tell "
+                ["**Open the three PDFs in `benefits/` and read them.** They are short. You cannot tell "
                  "whether extraction worked if you do not know what was in there.",
                  {"tip": "Pay attention to the table in the leave policy. You will watch what happens to it."}],
                 ["Create `prepare_documents.py`:",
@@ -770,7 +770,7 @@ LAB04 = {
                        "from azure.identity import DefaultAzureCredential\n"
                        "from dotenv import load_dotenv\n\n"
                        "load_dotenv()\n\n"
-                       'PDF_FOLDER = Path("data/benefits")')],
+                       'PDF_FOLDER = Path("benefits")')],
             ],
         },
         {
@@ -864,7 +864,7 @@ LAB04 = {
                        "    compare_the_two_strategies(pages)\n"
                        '    build_chunk_records(client, strategy="paragraph")')],
                 [block("python prepare_documents.py", "powershell")],
-                ["**Open `data/chunks.json`.** Every record has five fields, and each one is there for a "
+                ["**Open `chunks.json`.** Every record has five fields, and each one is there for a "
                  "reason:",
                  {"table": (["Field", "Why it exists"], [
                      ["`id`", "Stable — same document, page and position always gives the same id. "
@@ -901,12 +901,12 @@ LAB04 = {
     "summary": [
         "You extracted three policies as Markdown with their tables intact, kept every page number, compared "
         "two chunking strategies on real text, and labelled each chunk with its source and its audience.",
-        "`data/chunks.json` is the input to the next three exercises. Keep it.",
+        "`chunks.json` is the input to the next three exercises. Keep it.",
     ],
     "cleanup": [
         "Nothing was created in Azure — Document Intelligence just read your files and charged you for the "
         "pages.",
-        "Keep `data/chunks.json`. Exercise 05 needs it.",
+        "Keep `chunks.json`. Exercise 05 needs it.",
     ],
     "refs": [
         ("Document Intelligence layout model",

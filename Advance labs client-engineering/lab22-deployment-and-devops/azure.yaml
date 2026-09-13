@@ -1,13 +1,13 @@
 name: resident-workshop
 infra:
   provider: bicep
-  path: src/infra
+  path: infra
 services:
   web:
     project: ../lab21-agent-web-application
     language: python
     host: appservice
   tools:
-    project: src/function
+    project: function
     language: python
     host: function

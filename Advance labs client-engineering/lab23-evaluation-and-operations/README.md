@@ -13,7 +13,7 @@ Responses, Search core and Azure Monitor: GA paths. Model judges are probabilist
 
 ## Prerequisites (roles, resources, quota)
 
-Python3.11+, Azure CLI login, the service endpoints named in `.env.example`, supported model quota and least-privilege data-plane access. Use an independent instructor-supplied environment. Cloud setup and tenant integrations are separate from offline validation. 
+Python3.11+, Azure CLI login, the service endpoints named in `the shared workshop .env`, supported model quota and least-privilege data-plane access. Use an independent instructor-supplied environment. Cloud setup and tenant integrations are separate from offline validation.
 
 ## Australian/residency note
 
@@ -27,9 +27,9 @@ From this lab directory:
 py -3.11 -m venv .venv
 .venv/Scripts/Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
-python validate.py
+python -m compileall .
 ```
 
 Populate `.env` with endpoints and actual deployment names. No service keys are used.
@@ -37,25 +37,25 @@ Populate `.env` with endpoints and actual deployment names. No service keys are 
 ## Guided walkthrough with numbered steps and code explanation
 
 1. Supply an independent Search index with the bundled Acme corpus, fields `content`, `source`, `allowed_groups`, and both `hr-internal` and `citizen-service` permissions. Use the documented Lab08 preparation as a reusable prerequisite (not Lab18, whose groups and corpus differ); this lab bundles its own 20-row evaluation set.
-2. Run `python src/evaluate.py --revision classroom-v1`. The candidate receives Search results, not the reference answer. The judge sees both for scoring. Recall@5 is source-document recall with one expected source per question; it is not chunk-level recall. The safety check measures returned document memberships for two synthetic identities. Lab21 separately tests signed user claims.
-3. Run `python src/gate.py --report data/evaluation-report.json --revision classroom-v1`. Thresholds are teaching defaults: recall>=0.8, mean groundedness>=4, mean correctness>=4 and zero retrieval membership violations across at least20 cases. Calibrate with subject experts before production. Averages can hide severe individual failures; manually review case results too.
-4. Copy the report to a local test file and change one metric, revision or evidence kind; confirm the gate exits1. `validate.py` exercises these cases offline, including NaN metrics. A fixture can test gate logic but never approve a release. A report is not tamper-proof; CI must protect workflow/code and generate it in the trusted job.
-5. Run `python src/observe.py`, find its printed trace ID in Application Insights, then run `data/operations.kql`. Compare tokens and latency across runs. Deliberately use an invalid deployment name once and inspect the failed span; restore configuration afterwards. The observed call is an inference telemetry example, not the full Lab21 request tree.
-6. Follow `data/production-operations.md` to define an alert, a release gate, production sampling and cost attribution. The CI example in Lab22 also runs app tests; this reference pipeline evaluation alone does not certify the deployed application's JWT, tool or network behaviour.
+2. Run `python evaluate.py --revision classroom-v1`. The candidate receives Search results, not the reference answer. The judge sees both for scoring. Recall@5 is source-document recall with one expected source per question; it is not chunk-level recall. The safety check measures returned document memberships for two synthetic identities. Lab21 separately tests signed user claims.
+3. Run `python gate.py --report evaluation-report.json --revision classroom-v1`. Thresholds are teaching defaults: recall>=0.8, mean groundedness>=4, mean correctness>=4 and zero retrieval membership violations across at least20 cases. Calibrate with subject experts before production. Averages can hide severe individual failures; manually review case results too.
+4. Copy the report to a local test file and change one metric, revision or evidence kind; confirm the gate exits1. `compileall` exercises these cases offline, including NaN metrics. A fixture can test gate logic but never approve a release. A report is not tamper-proof; CI must protect workflow/code and generate it in the trusted job.
+5. Run `python observe.py`, find its printed trace ID in Application Insights, then run `operations.kql`. Compare tokens and latency across runs. Deliberately use an invalid deployment name once and inspect the failed span; restore configuration afterwards. The observed call is an inference telemetry example, not the full Lab21 request tree.
+6. Follow `production-operations.md` to define an alert, a release gate, production sampling and cost attribution. The CI example in Lab22 also runs app tests; this reference pipeline evaluation alone does not certify the deployed application's JWT, tool or network behaviour.
 
 ## Run & expected output
 
 ```powershell
-python src/evaluate.py --revision classroom-v1
-python src/gate.py --report data/evaluation-report.json --revision classroom-v1
-python src/observe.py
+python evaluate.py --revision classroom-v1
+python gate.py --report evaluation-report.json --revision classroom-v1
+python observe.py
 ```
 
 A live report with20 cases; a gate exit0 for satisfactory current evidence or exit1 for failure. Trace/token fields appear only after successful ingestion; local tests cannot prove that.
 
 ## Validation
 
-`python validate.py` checks local source and the named deterministic mechanics. It prints PASS/FAIL and exits nonzero on failure. Follow the walkthrough for live evidence; offline validation does not contact Azure or certify production controls.
+`python -m compileall .` checks local source and the named deterministic mechanics. It prints PASS/FAIL and exits nonzero on failure. Follow the walkthrough for live evidence; offline validation does not contact Azure or certify production controls.
 
 ## Troubleshooting
 
@@ -70,7 +70,7 @@ A live report with20 cases; a gate exit0 for satisfactory current evidence or ex
 
 ## Cleanup
 
-Run `python cleanup.py` for this lab's generated local reports. It prompts and is safe to repeat. Shared services are instructor-owned. Reverse any scoped tenant changes you created using the recorded resource names; no blanket subscription or tenant deletion. Optional local model caches are managed through the Local SDK rather than deleting unrelated cache folders.
+Run `remove generated local files manually` for this lab's generated local reports. It prompts and is safe to repeat. Shared services are instructor-owned. Reverse any scoped tenant changes you created using the recorded resource names; no blanket subscription or tenant deletion. Optional local model caches are managed through the Local SDK rather than deleting unrelated cache folders.
 
 ## Knowledge check (3 MCQs with answer key)
 

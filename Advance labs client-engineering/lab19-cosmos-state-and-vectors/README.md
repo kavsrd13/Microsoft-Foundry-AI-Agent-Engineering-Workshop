@@ -24,22 +24,22 @@ $rg = 'YOUR-RESOURCE-GROUP'
 $account = 'YOUR-COSMOS-ACCOUNT'
 az cosmosdb sql database create -g $rg -a $account -n workshop-memory
 az cosmosdb sql container create -g $rg -a $account -d workshop-memory -n sessions --partition-key-path /userId --ttl -1
-az cosmosdb sql container create -g $rg -a $account -d workshop-memory -n vectors --partition-key-path /userId --vector-embeddings '@data/vector-policy.json' --idx '@data/index-policy.json'
+az cosmosdb sql container create -g $rg -a $account -d workshop-memory -n vectors --partition-key-path /userId --vector-embeddings '@vector-policy.json' --idx '@index-policy.json'
 ```
 
 These commands provision billable resources when a learner executes them. Instructor chooses serverless or provisioned throughput for the existing account; do not assume the example sets a budget. `--ttl -1` enables item-specific TTL with no default expiry. The scripts supply TTL on sessions/preferences. `flat` vectors use 256 dimensions, within the 505-dimension flat-index limit; these are real shortened text-embedding-3-small embeddings. For large collections compare quantizedFlat/DiskANN after loading representative data, not three records. [Cosmos vector search](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/vector-search), [TTL](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/time-to-live)
 
 ## Participant steps
 
-1. Create an isolated Python 3.11+ virtual environment, install `requirements.txt`, copy `.env.example` to `.env`, fill endpoints/deployment and run `az login`. Keep `.env` untracked.
-2. Read `src/store.py`: the identity partition comes from a token acquired directly by Azure Identity. It is not taken from a user-supplied field. Token payload decoding here is **not validation of incoming tokens**. A web application must authenticate requests in middleware first and use its validated principal.
+1. Create an isolated Python 3.11+ virtual environment, install `requirements.txt`, copy `the shared workshop .env` to `.env`, fill endpoints/deployment and run `az login`. Keep `.env` untracked.
+2. Read `store.py`: the identity partition comes from a token acquired directly by Azure Identity. It is not taken from a user-supplied field. Token payload decoding here is **not validation of incoming tokens**. A web application must authenticate requests in middleware first and use its validated principal.
 3. Run the two commands below separately, closing Python between them. A second process recovers ACME-204 and the preference.
 
 ```powershell
-python src/save.py
-python src/read.py
-python src/vectors.py
-python validate.py
+python save.py
+python read.py
+python vectors.py
+python -m compileall .
 ```
 
 4. Inspect both session items in Data Explorer, including `_ts` and `ttl`. Point reads require `id` and partition key. Capture request charge from Data Explorer Query Stats; compare a point read with a query. Set the session TTL to 30 seconds in `save.py`, save again, wait at least 30 seconds, then read. The session should become unavailable while the preference remains; restore 3600 afterwards. No catch block hides the expected not-found response.
@@ -48,17 +48,17 @@ python validate.py
 
 ## Guided BYO inspection (instructor, 15 minutes)
 
-Point `COSMOS_ENDPOINT` to the approved BYO account temporarily and run `python src/inspect_byo.py`. Capture container names, partition paths and TTL metadata only; restore the lab endpoint afterwards. Standard setup uses `enterprise_memory`. Classic runtime containers include `thread-message-store`, `system-thread-message-store` and `agent-entity-store`; newer runtime state uses `agent-definitions-v1` and `run-state-v1`. Actual provisioned containers depend on runtime/setup; do not create, edit, delete or impose TTL on service-owned containers.
+Point `COSMOS_ENDPOINT` to the approved BYO account temporarily and run `python inspect_byo.py`. Capture container names, partition paths and TTL metadata only; restore the lab endpoint afterwards. Standard setup uses `enterprise_memory`. Classic runtime containers include `thread-message-store`, `system-thread-message-store` and `agent-entity-store`; newer runtime state uses `agent-definitions-v1` and `run-state-v1`. Actual provisioned containers depend on runtime/setup; do not create, edit, delete or impose TTL on service-owned containers.
 
 **Throughput is a deployment prerequisite, not a universal memory constant.** The current standard-setup documentation states a 3000 RU/s account limit and also describes five containers at 1000 RU/s each; its troubleshooting still references three containers. Reconcile the selected runtime's template/container count, account limit and actual offers before provisioning. Do not present 3000 RU/s as sufficient for every topology. Serverless consumption and provisioned RU/s are different billing modes. Record the verified setting in rehearsal evidence. [Standard setup and storage requirements](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/standard-agent-setup)
 
 ## Decision exercise and evidence
 
-Choose Cosmos vectors when operational JSON and vector similarity should live together with your application data. Choose Azure AI Search for this course's document ingestion, skillsets, hybrid/semantic retrieval and search-specific features. Managed memory is runtime-owned; custom RAG is application-owned retrieval. Neither automatically provides cross-session preferences or grants access to documents. Record these decisions, save/read outputs, TTL result, vector ranking and request charge in `data/evidence.md` (create locally). [Vector Python reference](https://learn.microsoft.com/en-us/azure/cosmos-db/quickstart-vector-store-python)
+Choose Cosmos vectors when operational JSON and vector similarity should live together with your application data. Choose Azure AI Search for this course's document ingestion, skillsets, hybrid/semantic retrieval and search-specific features. Managed memory is runtime-owned; custom RAG is application-owned retrieval. Neither automatically provides cross-session preferences or grants access to documents. Record these decisions, save/read outputs, TTL result, vector ranking and request charge in `evidence.md` (create locally). [Vector Python reference](https://learn.microsoft.com/en-us/azure/cosmos-db/quickstart-vector-store-python)
 
 ## Cleanup and checks
 
-Run `python cleanup.py` only after both save and vector steps; it removes the fixed synthetic items in the current identity partition. A missing item raises visibly (including after TTL expiry); remove remaining IDs in Data Explorer if needed. Instructor reviews then removes the dedicated `workshop-memory` database if no other participant uses it. Never delete `enterprise_memory` for this exercise.
+Run `remove generated local files manually` only after both save and vector steps; it removes the fixed synthetic items in the current identity partition. A missing item raises visibly (including after TTL expiry); remove remaining IDs in Data Explorer if needed. Instructor reviews then removes the dedicated `workshop-memory` database if no other participant uses it. Never delete `enterprise_memory` for this exercise.
 
 1. Why is `/userId` not itself authorisation? **Answer:** the application must constrain access using authenticated identity.
 2. Why do original files and vectors use different stores? **Answer:** their ingestion, retrieval and persistence responsibilities differ.

@@ -35,7 +35,7 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><pre><code class="language-text">PROJECT_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT
 MODEL_DEPLOYMENT=YOUR-CHAT-DEPLOYMENT
@@ -222,7 +222,7 @@ ASSISTANT_RULES = (
 <h2 id="task-5-are-we-ready">Task 5: Are we ready?</h2>
 <ol>
 <li><p>Add the last function:</p>
-<pre><code class="language-python">def check_readiness(evidence_path=&quot;data/control-evidence.json&quot;):
+<pre><code class="language-python">def check_readiness(evidence_path=&quot;control-evidence.json&quot;):
     &quot;&quot;&quot;Report which controls are actually evidenced. Fails by default.&quot;&quot;&quot;
     print(&quot;\n=== Production readiness ===&quot;)
 
@@ -267,7 +267,7 @@ ASSISTANT_RULES = (
 </code></pre>
 <blockquote class="ok"><p><strong>Check</strong>: Every control reports PENDING, and the script says you are not ready.</p></blockquote></li>
 <li><p>That is deliberate.</p>
-<blockquote><p><strong>Note</strong>: <code>data/control-evidence.json</code> ships with everything pending on purpose. A readiness script that passes out of the box is worse than no script at all — it manufactures false confidence.</p></blockquote></li>
+<blockquote><p><strong>Note</strong>: <code>control-evidence.json</code> ships with everything pending on purpose. A readiness script that passes out of the box is worse than no script at all — it manufactures false confidence.</p></blockquote></li>
 <li><p>Look at what it demands before a control counts as done:</p>
 <pre><code class="language-python">    if control.get(&quot;status&quot;) != &quot;verified&quot;:
         missing.append(&quot;not marked verified&quot;)
@@ -422,7 +422,7 @@ def check_network_boundaries(hostnames):
 
 
 # --- Task 5 -----------------------------------------------------------------
-def check_readiness(evidence_path=&quot;data/control-evidence.json&quot;):
+def check_readiness(evidence_path=&quot;control-evidence.json&quot;):
     &quot;&quot;&quot;Report which controls are actually evidenced. Fails by default.&quot;&quot;&quot;
     print(&quot;\n=== Production readiness ===&quot;)
 
@@ -498,7 +498,7 @@ if __name__ == &quot;__main__&quot;:
 <h2 id="clean-up">Clean up</h2>
 <p>Nothing was created in Azure.</p>
 <p>Reverse any tenant changes you made for Task 6, using the names you recorded.</p>
-<pre><code class="language-powershell">Remove-Item data/redteam-results.json -ErrorAction SilentlyContinue
+<pre><code class="language-powershell">Remove-Item redteam-results.json -ErrorAction SilentlyContinue
 </code></pre>
 <h2 id="references">Further reading</h2>
 <ul><li><a href="https://learn.microsoft.com/azure/ai-services/content-safety/quickstart-text">Content Safety</a></li><li><a href="https://learn.microsoft.com/azure/foundry/how-to/develop/run-scans-ai-red-teaming-agent">AI Red Teaming Agent</a></li><li><a href="https://learn.microsoft.com/azure/foundry/control-plane/how-to-manage-compliance-security">Compliance and security</a></li></ul>

@@ -69,7 +69,7 @@ indexing, deployment or tenant operation is claimed.
 
 ### Finding 1 — P1 — The repository's own structural checker does not run
 
-`check_workshop.py` line 10 globs `client-engineering/lab*`. The folder is named
+`check_workshop.py` line 10 globs `Advance labs client-engineering/lab*`. The folder is named
 `Advance labs client-engineering`. It therefore finds 16 labs, not 24, and fails immediately:
 
 ```
@@ -80,14 +80,14 @@ AssertionError: Expected 24 labs
 `DIRECTORY-TREE.txt` are stale artefacts generated before it, and `VALIDATION.md`'s structural claims cannot
 currently be reproduced by the command it tells you to run.
 
-**Verified.** Patching the glob to `*client-engineering/lab*` makes all 24 labs pass every structural check —
+**Verified.** Patching the glob to `*Advance labs client-engineering/lab*` makes all 24 labs pass every structural check —
 7/7 required items, correct section ordering, valid Python, no framework leakage into Days 1–3, and all
 dataset assertions. The content is sound; only the checker's path is wrong.
 
 **Fix.** One line:
 
 ```python
-labs = sorted([*root.glob('day*/lab*'), *root.glob('*client-engineering/lab*')], key=lambda p: p.name)
+labs = sorted([*root.glob('day*/lab*'), *root.glob('*Advance labs client-engineering/lab*')], key=lambda p: p.name)
 ```
 
 ### Finding 2 — P1 — 96 broken internal links
@@ -101,37 +101,37 @@ Same root cause. Affected files:
 | `PACKAGE-MATRIX.md` | 8 |
 | `VALIDATION.md` | 3 |
 
-All point at `client-engineering/...`. Every one resolves if the prefix becomes
+All point at `Advance labs client-engineering/...`. Every one resolves if the prefix becomes
 `Advance labs client-engineering/` (URL-encode the spaces for web hosting).
 
 ### Finding 3 — P1 — The CI workflow references paths that do not exist
 
-`Advance labs client-engineering/lab22-deployment-and-devops/src/workflow.yml` references seven paths under
-`foundry-agent-workshop/client-engineering/`:
+`Advance labs client-engineering/lab22-deployment-and-devops/workflow.yml` references seven paths under
+`foundry-agent-workshop/Advance labs client-engineering/`:
 
 ```
-foundry-agent-workshop/client-engineering/lab21-agent-web-application/requirements.txt
-foundry-agent-workshop/client-engineering/lab21-agent-web-application/validate.py
-foundry-agent-workshop/client-engineering/lab23-evaluation-and-operations/requirements.txt
-foundry-agent-workshop/client-engineering/lab23-evaluation-and-operations/src/evaluate.py
-foundry-agent-workshop/client-engineering/lab23-evaluation-and-operations/src/gate.py
-foundry-agent-workshop/client-engineering/lab21-agent-web-application          (deploy package)
-foundry-agent-workshop/client-engineering/lab22-deployment-and-devops/src/function
+foundry-agent-workshop/Advance labs client-engineering/lab21-agent-web-application/requirements.txt
+foundry-agent-workshop/Advance labs client-engineering/lab21-agent-web-application/compileall
+foundry-agent-workshop/Advance labs client-engineering/lab23-evaluation-and-operations/requirements.txt
+foundry-agent-workshop/Advance labs client-engineering/lab23-evaluation-and-operations/evaluate.py
+foundry-agent-workshop/Advance labs client-engineering/lab23-evaluation-and-operations/gate.py
+foundry-agent-workshop/Advance labs client-engineering/lab21-agent-web-application          (deploy package)
+foundry-agent-workshop/Advance labs client-engineering/lab22-deployment-and-devops/function
 ```
 
-The workflow would fail at its first step. `src/CI-CD.md` tells the reader to remove the
+The workflow would fail at its first step. `CI-CD.md` tells the reader to remove the
 `foundry-agent-workshop/` prefix if the workshop is the repository root — but it does not mention the
 `Advance labs ` prefix, and the folder name contains a space that would need quoting in a shell step.
 
-**Secondary issue: the validator does not catch this.** `lab22/validate.py` asserts only that the deploy steps
-come after the gate step, and that the substring `lab23-evaluation-and-operations/src/evaluate.py` appears in
+**Secondary issue: the validator does not catch this.** `lab22/compileall` asserts only that the deploy steps
+come after the gate step, and that the substring `lab23-evaluation-and-operations/evaluate.py` appears in
 the gate command. That substring is present inside the broken path, so the check passes. Recommend adding a
 path-existence assertion for each referenced file.
 
 ### Finding 4 — P2 — Lab 01 and Lab 02 ship identical code
 
-`day1-foundry-sdk-foundations/lab01-foundry-setup/src/main.py` and
-`day1-foundry-sdk-foundations/lab02-model-deployment/src/main.py` are byte-identical apart from the docstring
+`day1-foundry-sdk-foundations/lab01-foundry-setup/main.py` and
+`day1-foundry-sdk-foundations/lab02-model-deployment/main.py` are byte-identical apart from the docstring
 URL. Lab 02 is budgeted at 90 minutes with no new code at all.
 
 This is defensible — Lab 02 is deliberately a portal and decision exercise — but it should be a conscious
@@ -155,7 +155,7 @@ transition.
 
 ### Finding 6 — P2 — Day 4 validators test nothing behavioural
 
-`validate.py` for Labs 13–16 checks only three things: that the source parses, that
+`compileall` for Labs 13–16 checks only three things: that the source parses, that
 `agent_framework_foundry` is importable, and that a `data` folder exists. No API surface, no session
 round-trip, no middleware ordering, no workflow construction.
 
@@ -175,7 +175,7 @@ have caught API drift.
   Local SDK rather than deleting unrelated cache folders."* Neither lab has a local model.
 - Lab 24's setup section refers to *"OpenAI client `api_key=token` in the embedding example"*. Lab 24 has no
   embedding example; this is Lab 17's text.
-- `lab09/validate.py` contains dead `if root.name.startswith('lab11')` and `'lab12'` branches — a shared
+- `lab09/compileall` contains dead `if root.name.startswith('lab11')` and `'lab12'` branches — a shared
   validator that was copied rather than specialised.
 
 ### Finding 8 — P3 — Bicep uses a storage account key, contradicting the posture it teaches
@@ -196,7 +196,7 @@ exception, so a learner does not conclude the rule is optional.
 
 The requirement names "containerised hosting (Container Apps / App Service) with autoscaling". The Bicep
 provisions a fixed `P1v3` plan at `capacity: 1` with no `Microsoft.Insights/autoscalesettings` resource.
-Autoscaling and Container Apps are covered in `src/PUBLISHING.md` as guided configuration exercises (add an
+Autoscaling and Container Apps are covered in `PUBLISHING.md` as guided configuration exercises (add an
 autoscale rule min 1 / max 2, generate load, observe, remove).
 
 This is legitimate and is labelled as such, but it should be confirmed with the client that guided
@@ -216,7 +216,7 @@ or administrator work with no runnable code. **Decision** = a reasoned architect
 | 1 | AU identity, networking, regions, residency | Decision + guided | 02, 17, 24, `AUSTRALIA-RESIDENCY.md` | **Strong.** The "deployment type, not account region" point is made consistently and repeatedly. |
 | 1 | Pricing and consumption | Build + decision | 17, 19, 23 | **Adequate.** `estimate_cost.py` is simple arithmetic over measured tokens; the worksheet adds Search/Cosmos/hosting/telemetry. No PTU or reserved-capacity modelling. |
 | 2 | Model families: capability, latency, cost, compliance | Build + decision | 02, 17 | **Strong.** `compare_models.py` measures two real deployments on one task with a deliberate "unknown answer" trap. |
-| 2 | Global Standard, PTU, serverless, managed compute | Decision | 17 worksheet | **Covered.** All five options plus Local appear in the worksheet's deployment comparison table, with what must be justified for each. Note this is *not* in `lab02/data/deployment-options.yaml`, which covers residency only. |
+| 2 | Global Standard, PTU, serverless, managed compute | Decision | 17 worksheet | **Covered.** All five options plus Local appear in the worksheet's deployment comparison table, with what must be justified for each. Note this is *not* in `lab02/deployment-options.yaml`, which covers residency only. |
 | 2 | OpenAI-compatible Responses inference | Build | 04, 17 | **Strong.** Includes conversations and streaming. |
 | 2 | Multimodal | Build | 17 | **Adequate.** One vision call, with a good discussion of when to prefer extraction plus retrieval. |
 | 2 | Embeddings: model, dimensions, cost, latency | Build | 17, 18, 19 | **Strong.** 256 vs 1536 measured for ranking, tokens, latency and bytes per vector. |
@@ -277,7 +277,7 @@ Open [`self-paced/index.html`](self-paced/index.html).
 
 **Why a rewrite rather than a Markdown-to-HTML conversion.** The Day 1–4 READMEs use a rigid 13-section
 template in which the guided walkthrough is typically three numbered steps, two of which are generic filler
-("Open `src/main.py` and identify authentication…", "Change one input and explain the difference to another
+("Open `main.py` and identify authentication…", "Change one input and explain the difference to another
 participant"). They are written for an instructor to expand in the room. The advanced labs 17–24 are the
 opposite — detailed, bespoke and genuinely self-paced; Lab 18's README in particular is the model.
 
@@ -320,7 +320,7 @@ does *not* prove.
 1. Fix the `check_workshop.py` glob and re-run it; regenerate `COMPLETION-MATRIX.md` and `DIRECTORY-TREE.txt`
    (finding 1).
 2. Repair the 96 broken markdown links (finding 2).
-3. Repair the seven workflow paths and add a path-existence assertion to `lab22/validate.py` (finding 3).
+3. Repair the seven workflow paths and add a path-existence assertion to `lab22/compileall` (finding 3).
 4. Agree the guided-only depth with the client in writing, and pre-provision whichever integrations they most
    want demonstrated.
 5. **Rehearse every live path in the target tenant.** Nothing in this report — or in the repository's own
@@ -333,7 +333,7 @@ does *not* prove.
 6. Strengthen the Day 4 validators (finding 6) — the specific checks are listed and were verified working.
 7. Normalise environment variable names, or document the rule prominently (finding 5).
 8. Remove the copy-pasted paragraphs from the Lab 23 and Lab 24 READMEs and the dead branches in
-   `lab09/validate.py` (finding 7).
+   `lab09/compileall` (finding 7).
 9. Decide on the `AzureWebJobsStorage` key versus managed identity question and comment the choice
    (finding 8).
 10. Confirm whether guided autoscaling meets the requirement, or add

@@ -27,34 +27,34 @@ Australia East supports Foundry projects. Verify model, tool and evaluator avail
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
 ```
 
 3. Replace the placeholders in `.env`. A deployment name is not a model family name. Never commit `.env`.
-4. Run `python validate.py` before any service call.
+4. Run `python -m compileall .` before any service call.
 
 ## Guided walkthrough with numbered steps and code explanation
 
-1. Read `data/portal-walkthrough.md` and create an isolated knowledge source and knowledge base from the synthetic files in this lab. No other lab is required.
-2. Read `src/retrieve.py`: one Entra token, one documented REST request, one JSON response. The GA request uses `intents` and returns extractive evidence.
+1. Read `portal-walkthrough.md` and create an isolated knowledge source and knowledge base from the synthetic files in this lab. No other lab is required.
+2. Read `retrieve.py`: one Entra token, one documented REST request, one JSON response. The GA request uses `intents` and returns extractive evidence.
 3. Run with `--preview` only after checking permission to use preview planning and answer synthesis. Inspect references and activity in the returned JSON.
-4. Run `src/search_fallback.py` against the independent lab index if IQ is unavailable. Its explicit group filter demonstrates application-enforced access; this is text retrieval, not agentic planning.
-5. Compare the live response with `data/illustrative-output.md`. That file is a teaching illustration, never evidence of a successful service call.
+4. Run `search_fallback.py` against the independent lab index if IQ is unavailable. Its explicit group filter demonstrates application-enforced access; this is text retrieval, not agentic planning.
+5. Compare the live response with `illustrative-output.md`. That file is a teaching illustration, never evidence of a successful service call.
 
 ## Run & expected output
 
 ```powershell
-python src/retrieve.py
-python src/retrieve.py --preview
-python src/search_fallback.py
+python retrieve.py
+python retrieve.py --preview
+python search_fallback.py
 ```
 
-The retrieval script prints the genuine JSON response and saves `data/live-retrieval.json`; references identify retrieved evidence. The fallback prints source filenames and content. Preview behaviour depends on the configured knowledge base.
+The retrieval script prints the genuine JSON response and saves `live-retrieval.json`; references identify retrieved evidence. The fallback prints source filenames and content. Preview behaviour depends on the configured knowledge base.
 
 ## Validation
 
-`python validate.py` checks local syntax and assets without Azure. `python validate.py --live` checks the saved live artefact after running the demo; it is not a new cloud call. Pass criteria: no local failures, and the explicit live evidence check passes. For Lab 12, the instructor must also verify the trace in Application Insights. No tenant execution was performed while building this repository.
+`python -m compileall .` checks local syntax and assets without Azure. `python -m compileall .` checks the saved live artefact after running the demo; it is not a new cloud call. Pass criteria: no local failures, and the explicit live evidence check passes. For Lab 12, the instructor must also verify the trace in Application Insights. No tenant execution was performed while building this repository.
 
 ## Troubleshooting table
 
@@ -70,7 +70,7 @@ The retrieval script prints the genuine JSON response and saves `data/live-retri
 
 ## Cleanup
 
-Run `python cleanup.py`. It lists only known lab artefacts and prompts before deleting them. Repeating cleanup is safe. Shared Azure infrastructure is not deleted. Follow the additional ownership notes in `data/cleanup-notes.md`.
+Run `remove generated local files manually`. It lists only known lab artefacts and prompts before deleting them. Repeating cleanup is safe. Shared Azure infrastructure is not deleted. Follow the additional ownership notes in `cleanup-notes.md`.
 
 ## Knowledge check
 

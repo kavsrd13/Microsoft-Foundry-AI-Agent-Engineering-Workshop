@@ -1,2 +1,4 @@
 -r ../../requirements-base.txt
 azure-ai-evaluation==1.18.5
+
+python-dotenv==1.2.3

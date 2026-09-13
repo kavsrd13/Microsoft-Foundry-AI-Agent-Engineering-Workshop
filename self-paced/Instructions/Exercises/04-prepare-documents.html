@@ -36,12 +36,12 @@ exercise is synthetic; do not substitute real records.</p></blockquote>
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 </code></pre></li>
 <li><p>Fill in the one value:</p>
 <pre><code class="language-text">DOCUMENT_INTELLIGENCE_ENDPOINT=https://YOUR-DI.cognitiveservices.azure.com
 </code></pre></li>
-<li><p>**Open the three PDFs in <code>data/benefits/</code> and read them.** They are short. You cannot tell whether extraction worked if you do not know what was in there.</p>
+<li><p>**Open the three PDFs in <code>benefits/</code> and read them.** They are short. You cannot tell whether extraction worked if you do not know what was in there.</p>
 <blockquote><p><strong>Tip</strong>: Pay attention to the table in the leave policy. You will watch what happens to it.</p></blockquote></li>
 <li><p>Create <code>prepare_documents.py</code>:</p>
 <pre><code class="language-python">&quot;&quot;&quot;Prepare documents for search.&quot;&quot;&quot;
@@ -56,7 +56,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PDF_FOLDER = Path(&quot;data/benefits&quot;)
+PDF_FOLDER = Path(&quot;benefits&quot;)
 </code></pre></li>
 </ol>
 <h2 id="task-2-extract-a-pdf">Task 2: Extract a PDF</h2>
@@ -135,7 +135,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PDF_FOLDER = Path(&quot;data/benefits&quot;)
+PDF_FOLDER = Path(&quot;benefits&quot;)
 
 
 # --- Task 2 -----------------------------------------------------------------
@@ -288,7 +288,7 @@ def build_chunk_records(client, strategy=&quot;paragraph&quot;):
                     &quot;allowed_groups&quot;: who_can_see_this(pdf_path.name),
                 })
 
-    output = Path(&quot;data/chunks.json&quot;)
+    output = Path(&quot;chunks.json&quot;)
     output.write_text(json.dumps(records, indent=2), encoding=&quot;utf-8&quot;)
 
     print(f&quot;\nwrote {len(records)} chunks to {output}&quot;)
@@ -310,7 +310,7 @@ def build_chunk_records(client, strategy=&quot;paragraph&quot;):
 </code></pre></li>
 <li><pre><code class="language-powershell">python prepare_documents.py
 </code></pre></li>
-<li><p>**Open <code>data/chunks.json</code>.** Every record has five fields, and each one is there for a reason:</p>
+<li><p>**Open <code>chunks.json</code>.** Every record has five fields, and each one is there for a reason:</p>
 <table><thead><tr><th>Field</th><th>Why it exists</th></tr></thead><tbody><tr><td><code>id</code></td><td>Stable — same document, page and position always gives the same id. Exercise 07 depends on this.</td></tr><tr><td><code>content</code></td><td>The text a model will actually read.</td></tr><tr><td><code>source</code> and <code>page</code></td><td>So an answer can cite something checkable.</td></tr><tr><td><code>allowed_groups</code></td><td>So Exercise 06 can show different people different things.</td></tr></tbody></table></li>
 <li><p>Notice where the access decision was made — at extraction time, in <code>who_can_see_this</code>. The leave policy is HR-only; the rest are shared.</p>
 <blockquote><p><strong>Note</strong>: This is the moment access control begins. Exercise 06 enforces these exact labels at query time. Get them wrong here and no amount of filtering later will fix it.</p></blockquote></li>
@@ -333,7 +333,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PDF_FOLDER = Path(&quot;data/benefits&quot;)
+PDF_FOLDER = Path(&quot;benefits&quot;)
 
 
 # --- Task 2 -----------------------------------------------------------------
@@ -460,7 +460,7 @@ def build_chunk_records(client, strategy=&quot;paragraph&quot;):
                     &quot;allowed_groups&quot;: who_can_see_this(pdf_path.name),
                 })
 
-    output = Path(&quot;data/chunks.json&quot;)
+    output = Path(&quot;chunks.json&quot;)
     output.write_text(json.dumps(records, indent=2), encoding=&quot;utf-8&quot;)
 
     print(f&quot;\nwrote {len(records)} chunks to {output}&quot;)
@@ -491,10 +491,10 @@ if __name__ == &quot;__main__&quot;:
 <details class="kc"><summary>3. What is the risk of fixed-width chunking?</summary><ul><li>A. It is slower</li><li>B. It can cut through a sentence or a table</li><li>C. It cannot handle PDFs</li></ul><div class="ans"><p><strong>Answer: B</strong></p><p>Half a table retrieved as evidence is worse than no table, because it looks authoritative.</p></div></details>
 <h2 id="summary">Summary</h2>
 <p>You extracted three policies as Markdown with their tables intact, kept every page number, compared two chunking strategies on real text, and labelled each chunk with its source and its audience.</p>
-<p><code>data/chunks.json</code> is the input to the next three exercises. Keep it.</p>
+<p><code>chunks.json</code> is the input to the next three exercises. Keep it.</p>
 <h2 id="clean-up">Clean up</h2>
 <p>Nothing was created in Azure — Document Intelligence just read your files and charged you for the pages.</p>
-<p>Keep <code>data/chunks.json</code>. Exercise 05 needs it.</p>
+<p>Keep <code>chunks.json</code>. Exercise 05 needs it.</p>
 <h2 id="references">Further reading</h2>
 <ul><li><a href="https://learn.microsoft.com/azure/ai-services/document-intelligence/prebuilt/layout?view=doc-intel-4.0.0">Document Intelligence layout model</a></li><li><a href="https://learn.microsoft.com/azure/search/vector-search-how-to-chunk-documents">Chunking guidance</a></li></ul>
 <div class="pager"><a href="03-first-agent.html">&#8592; Build your first agent</a><a href="05-vector-index.html">Build a vector index &#8594;</a></div>

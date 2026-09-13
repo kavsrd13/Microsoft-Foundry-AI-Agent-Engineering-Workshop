@@ -1,6 +1,6 @@
 # Self-paced exercises
 
-Microsoft Learn-style HTML exercise pages for all 24 workshop labs.
+Microsoft Learn-style HTML exercise pages for every workshop lab.
 
 **Open [`index.html`](index.html)** in a browser. Everything is static and self-contained — no CDN, no build
 step and no server required. The pages work from `file://` and can equally be published to GitHub Pages or any
@@ -10,9 +10,9 @@ static host.
 
 ```
 self-paced/
-  index.html                      landing page: all 24 exercises + capability map
+  index.html                      landing page: every exercise + capability map
   assets/css/style.css            self-contained stylesheet (no CDN)
-  Instructions/Exercises/*.html   the 24 exercise pages
+  Instructions/Exercises/*.html   one page per exercise
   build.py                        renderer
   content/                        exercise content as structured Python
     __init__.py                   lab order, day groupings, capability map
@@ -50,7 +50,7 @@ single-key dictionary:
 
 ## Relationship to the lab folders
 
-These pages are instructions only. The code, data, `.env.example`, validators and clean-up scripts stay in
+These pages are instructions only. The code, data, `the shared workshop .env`, validators and clean-up scripts stay in
 their original lab folders — `day1-…` through `day4-…` and `Advance labs client-engineering/`. Every page
 names its lab folder in the header strip, and every command it gives has been checked to point at a file that
 exists.
@@ -62,7 +62,7 @@ exists.
   fail once, on synthetic data, on purpose.
 - **Environment variable names differ between exercises** (`MODEL_DEPLOYMENT` vs `MODEL_DEPLOYMENT_NAME`, and
   others). This mirrors the SDK sample each lab is based on. The pages warn at each transition; always copy
-  the `.env.example` from the exercise you are running.
+  the `the shared workshop .env` from the exercise you are running.
 - **Every exercise uses its own virtual environment.** Day 4 in particular pins package versions that are
   deliberately incompatible with Days 1–3.
 - **Claims are kept honest.** An offline validator passing means what its PASS line says and no more; live

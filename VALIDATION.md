@@ -12,7 +12,7 @@
 - The complete Lab16 requirements resolved with the requested umbrella framework package. The hosting adapter also requires the explicitly pinned prerelease `azure-ai-agentserver-responses==2.2.0b1`.
 - Pinned evaluation1.18.5 constructor/call signatures were checked against its published wheel.
 
-See [COMPLETION-MATRIX.md](COMPLETION-MATRIX.md) and [DIRECTORY-TREE.txt](DIRECTORY-TREE.txt). Run `python check_workshop.py` from the repository root to repeat the structural/data/link checks. Run each lab's `validate.py` in its own installed environment for its documented offline checks.
+See [COMPLETION-MATRIX.md](COMPLETION-MATRIX.md) and [DIRECTORY-TREE.txt](DIRECTORY-TREE.txt). Run `python check_workshop.py` from the repository root to repeat the structural/link checks. Run each lab's `compileall` in its own installed environment for its documented offline checks.
 
 ## Not executed against Azure
 
@@ -35,11 +35,11 @@ The instructor must run each live walkthrough with the configured services befor
 ## Client expansion verification — 11 September 2026
 
 - Labs17–24: local validators passed. Their exact scope is described in each validator/README; many checks are structural or deterministic, not SDK integration tests.
-- Lab18: extraction/chunk strategies, freshness edits/deletion, image-only scan fixture and Search query construction exercised. Mocked sync checks cover failure/checkpoint/replay/no-op. See [RAG validation](client-engineering/lab18-end-to-end-rag/VALIDATION.md).
-- Lab19: Cosmos SDK query surface and mocked current-identity partition save/read/vector/cleanup checked. See [Cosmos validation](client-engineering/lab19-cosmos-state-and-vectors/VALIDATION.md). There is no live cross-process persistence or RU measurement claimed.
+- Lab18: extraction/chunk strategies, freshness edits/deletion, image-only scan fixture and Search query construction exercised. Mocked sync checks cover failure/checkpoint/replay/no-op. See [RAG validation](Advance labs client-engineering/lab18-end-to-end-rag/VALIDATION.md).
+- Lab19: Cosmos SDK query surface and mocked current-identity partition save/read/vector/cleanup checked. See [Cosmos validation](Advance labs client-engineering/lab19-cosmos-state-and-vectors/VALIDATION.md). There is no live cross-process persistence or RU measurement claimed.
 - Lab20: actual Function handler tested for missing principal, wrong/missing role, success and missing record; local HTTP client → test host → actual handler passed. Local MCP discovery was exercised during authoring. This does not validate Azure Functions Core Tools, deployed Easy Auth or an Entra-issued token.
 - Lab21: locally signed JWT and mocked request tests cover token failures, identity filters and SSE. The new seed script constructs/serialises actual Search11.x index models and writes distinct user ACLs through mocked clients. No real sign-in or live Search/inference completed.
-- Lab22: Bicep0.47.16 compiled `src/infra/main.bicep` without diagnostics. Per-lab checks and the app tests passed. No azd deployment, GitHub Actions execution, environment promotion or channel publishing occurred. See [deployment evidence](client-engineering/lab22-deployment-and-devops/data/validation-evidence.md).
+- Lab22: Bicep0.47.16 compiled `infra/main.bicep` without diagnostics. Per-lab checks and the app tests passed. No azd deployment, GitHub Actions execution, environment promotion or channel publishing occurred. See [deployment evidence](Advance labs client-engineering/lab22-deployment-and-devops/validation-evidence.md).
 - Lab23: gate checks reject invalid/stale/revision-mismatched evidence and non-finite metrics. These are fabricated test inputs for gate logic only; no passing release report is bundled. Live evaluator, telemetry SDK imports/ingestion and model output need rehearsal in the pinned lab environment.
 - Lab24: readiness template, synthetic probe inputs and Python syntax checked. Content Safety execution, native/managed red teaming, policy enforcement, Defender/Purview and Entra Agent ID are not live-validated.
 - Lab17: local cosine/dimension/example inputs and syntax checked. Model/embedding/multimodal calls and optional Foundry Local native SDK must be rehearsed. No price, performance or residency conclusions are claimed from local tests.

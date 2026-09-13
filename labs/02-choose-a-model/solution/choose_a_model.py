@@ -80,7 +80,7 @@ def compare_embedding_sizes(embeddings_client):
     """Embed the same sentences at two sizes and compare the rankings."""
     print("\n=== Comparing embedding sizes ===")
 
-    with open("data/texts.json", encoding="utf-8") as file:
+    with open("texts.json", encoding="utf-8") as file:
         texts = json.load(file)
 
     question = texts[0]
@@ -134,7 +134,7 @@ def read_a_picture(client):
     """Send an image to a vision-capable model."""
     print("\n=== Reading a picture ===")
 
-    with open("data/policy-page.png", "rb") as file:
+    with open("policy-page.png", "rb") as file:
         encoded_image = base64.b64encode(file.read()).decode()
 
     response = client.responses.create(

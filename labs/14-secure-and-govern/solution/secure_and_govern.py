@@ -143,7 +143,7 @@ def check_network_boundaries(hostnames):
 
 
 # --- Task 5 -----------------------------------------------------------------
-def check_readiness(evidence_path="data/control-evidence.json"):
+def check_readiness(evidence_path="control-evidence.json"):
     """Report which controls are actually evidenced. Fails by default."""
     print("\n=== Production readiness ===")
 

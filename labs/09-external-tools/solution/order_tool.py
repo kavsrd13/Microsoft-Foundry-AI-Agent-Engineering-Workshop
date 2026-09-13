@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 """Lab 09, part 1 - A tool that lives in its own service.
 
 This is an Azure Function. It is a normal HTTP service that happens to be
@@ -16,7 +19,7 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
 def load_orders():
-    with open(Path(__file__).parent.parent / "data/orders.json", encoding="utf-8") as f:
+    with open(Path(__file__).parent.parent / "orders.json", encoding="utf-8") as f:
         return json.load(f)
 
 

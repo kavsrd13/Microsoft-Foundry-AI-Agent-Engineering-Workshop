@@ -27,7 +27,7 @@ From this lab folder in PowerShell:
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+# Use the shared foundry-agent-workshop/.env file
 az login
 ```
 
@@ -35,21 +35,21 @@ Edit `.env` with your project endpoint and actual deployment name. Keep `AZURE_T
 
 ## Guided walkthrough with numbered steps and code explanation
 
-1. Open `src/main.py` and identify authentication, project access and the single concept being taught.
-2. Read `data/deployment-options.yaml`, then run `src/main.py` to inspect existing deployments. Follow `data/portal-deployment.md` to check quota and deploy a uniquely named model. Run the script again and verify that its name appears. Deployment management is intentionally a portal exercise: Python concentrates on project access rather than ARM plumbing.
+1. Open `main.py` and identify authentication, project access and the single concept being taught.
+2. Read `deployment-options.yaml`, then run `main.py` to inspect existing deployments. Follow `portal-deployment.md` to check quota and deploy a uniquely named model. Run the script again and verify that its name appears. Deployment management is intentionally a portal exercise: Python concentrates on project access rather than ARM plumbing.
 3. Change one input or instruction, rerun, and explain the observed difference to another participant.
 
 ## Run & expected output
 
 ```powershell
-python src/main.py
+python main.py
 ```
 
-Deployment names and model metadata. After the portal exercise the dedicated acme-lab02 deployment appears. Output wording varies with the deployed model. 
+Deployment names and model metadata. After the portal exercise the dedicated acme-lab02 deployment appears. Output wording varies with the deployed model.
 
 ## Validation
 
-`python validate.py` checks syntax offline. `python validate.py --live` checks real deployment access. PASS means only the named checks passed. Cloud failures exit 1 and retain the original exception type. A local PASS does not prove regional availability or successful inference.
+`python -m compileall .` checks syntax offline. `python -m compileall .` checks real deployment access. PASS means only the named checks passed. Cloud failures exit 1 and retain the original exception type. A local PASS does not prove regional availability or successful inference.
 
 ## Troubleshooting
 
@@ -64,7 +64,7 @@ Deployment names and model metadata. After the portal exercise the dedicated acm
 
 ## Cleanup
 
-Run `python cleanup.py` from this folder. The Python example is read-only. Lab 02 portal cleanup is described in data/portal-deployment.md. Shared project/account resources remain instructor-owned.
+Run `remove generated local files manually` from this folder. The Python example is read-only. Lab 02 portal cleanup is described in portal-deployment.md. Shared project/account resources remain instructor-owned.
 
 ## Knowledge check (3 MCQs with answer key)
 

@@ -73,7 +73,7 @@ def ask_the_agent(project):
 
 # --- Task 4: the three tools ------------------------------------------------
 def load_orders():
-    with open("data/orders.json", encoding="utf-8") as file:
+    with open("orders.json", encoding="utf-8") as file:
         return json.load(file)
 
 

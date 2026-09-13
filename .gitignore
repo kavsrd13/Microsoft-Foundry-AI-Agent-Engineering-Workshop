@@ -20,3 +20,16 @@ __pycache__/
 **/data/score-report.md
 **/data/trace-id.txt
 **/data/timings.json
+**/resource-state.json
+**/session.json
+**/response-ids.json
+**/embedding-results.json
+**/model-results.json
+**/redteam-results.json
+**/evaluation-report.json
+**/scores.json
+**/score-report.md
+**/trace-id.txt
+**/timings.json
+**/live-*.json
+**/live-*.txt

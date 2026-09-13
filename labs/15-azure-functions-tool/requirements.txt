@@ -1,0 +1,4 @@
+# For ask_the_agent.py, run on your machine. The Function has its own app/requirements.txt.
+azure-ai-projects==2.6.0
+azure-identity==1.25.3
+python-dotenv==1.2.3
