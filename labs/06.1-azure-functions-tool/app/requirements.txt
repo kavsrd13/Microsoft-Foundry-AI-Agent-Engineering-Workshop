@@ -1,0 +1,4 @@
+# The Functions platform manages the worker. Do not add azure-functions-worker here.
+azure-functions
+
+python-dotenv==1.2.3

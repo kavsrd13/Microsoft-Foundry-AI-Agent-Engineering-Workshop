@@ -1,10 +1,15 @@
-# Exercise 06.1 — Use Azure Functions with Foundry Agents (Queue-based)
+# Exercise 06.1 — Host an agent tool on Azure Functions (queue-based)
 
-This lab demonstrates how an AI agent in Microsoft Foundry calls an Azure Function asynchronously using Azure Storage queues.
+A Microsoft Foundry agent calls an Azure Function through Azure Storage queues: the agent writes a
+request to an input queue, a queue-triggered Function answers on an output queue,
+and the agent picks the answer up. Requires the **standard** agent setup, which
+`azd provision` creates from the infrastructure templates in `infra/`.
 
-## Folder Structure
-- `function_app/` - The Azure Function app listening to `get-weather-input-queue` and writing to `get-weather-output-queue`.
-- `agent.py` - The Python script using `azure-ai-projects` to register the agent with `AzureFunctionTool` and invoke it.
-- `solution/` - Completed reference files.
+- `azure.yaml` — azd project manifest mapping the `api` service to `./app/` (Python Azure Function).
+- `infra/` — Bicep templates for the standard setup (Storage, Search, Cosmos DB, Foundry account,
+  project, model deployment, capability hosts, and RBAC role assignments) plus a Flex Consumption Function app.
+- `app/` — the queue-triggered Function app (`function_app.py`, `host.json`, `requirements.txt`). Deploy with `azd deploy`.
+- `ask_the_agent.py` — the agent-side script using `azure-ai-projects` to define the tool, register the agent, and query it.
+- `solution/` — reference completed solution files.
 
 Follow the step-by-step instructions in the workshop documentation to complete this lab.
