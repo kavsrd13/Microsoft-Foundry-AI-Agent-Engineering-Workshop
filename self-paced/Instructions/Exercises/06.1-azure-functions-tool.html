@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Exercise 06.1 — Integrate Azure Functions with Foundry agents (queue-based) | Microsoft Foundry AI Agent Engineering</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <span class="course">Microsoft Foundry AI Agent Engineering</span>
+  <span><a href="../../index.html">&#8962; All exercises</a></span>
+</div></div>
+<div class="container">
+<main class="row">
+<aside class="toc"><h4>On this page</h4><ul>
+  <li><a href="#before-you-start">Before you start</a></li>
+  <li><a href="#task-1-understand-architecture">Task 1: Understand the queue-based tool pattern</a></li>
+  <li><a href="#task-2-create-storage-queues">Task 2: Create the Azure Storage Queues</a></li>
+  <li><a href="#task-3-configure-rbac">Task 3: Configure required RBAC role assignments</a></li>
+  <li><a href="#task-4-build-azure-function">Task 4: Configure and run the Azure Function</a></li>
+  <li><a href="#task-5-build-agent">Task 5: Define the Azure Function tool and run the agent</a></li>
+  <li><a href="#task-6-observe-roundtrip">Task 6: Observe the asynchronous execution</a></li>
+  <li><a href="#task-7-clean-up">Task 7: Clean up</a></li>
+  <li><a href="#knowledge-check">Knowledge check</a></li>
+  <li><a href="#summary">Summary</a></li>
+  <li><a href="#references">Further reading</a></li>
+</ul></aside>
+<article>
+<h1 id="top">Exercise 06.1 &mdash; Integrate Azure Functions with Foundry agents (queue-based)</h1>
+<p>Learn how to integrate <strong>Azure Functions</strong> with Microsoft Foundry agents by using an asynchronous, queue-based architecture. Instead of calling a synchronous HTTP endpoint from client code, the Foundry Agent Service drops tool invocation requests directly onto an Azure Storage queue, your serverless Function processes the request, and the answer is returned through an output queue.</p>
+<p>By using this approach, your agents can access enterprise systems and long-running business logic with scale-to-zero pricing, automatic retries, and clean security isolation.</p>
+<p>This exercise takes approximately <strong>60</strong> minutes.</p>
+
+<div class="meta">
+  <div><strong>Lab folder</strong>: <code>labs/06.1-azure-functions-tool</code></div>
+  <div><strong>Run scripts from</strong>: the lab folder</div>
+  <div><strong>Environment</strong>: <code>azure-ai-projects>=2.0.0</code>, <code>azure-identity</code>, <code>azure-functions</code>, Azure Functions Core Tools</div>
+</div>
+<div class="tags"><span class="tag alt">Azure Functions</span><span class="tag">Queue Storage</span><span class="tag">Foundry Agent Service</span><span class="tag">Standard Setup</span></div>
+
+<h2 id="before-you-start">Before you start</h2>
+<h3>What you will do</h3>
+<ul>
+  <li>Understand the asynchronous queue-based tool pattern and why standard setup is required.</li>
+  <li>Create input and output Azure Storage queues (<code>get-weather-input-queue</code> and <code>get-weather-output-queue</code>).</li>
+  <li>Assign the <strong>Storage Queue Data Contributor</strong> role to your user account and the Foundry project managed identity.</li>
+  <li>Implement an Azure Function with <code>@app.queue_trigger</code> and <code>@app.queue_output</code>, correctly echoing the <code>CorrelationId</code>.</li>
+  <li>Define the <code>AzureFunctionTool</code> in Python using <code>azure-ai-projects</code>, register a prompt agent version, and ask a question.</li>
+  <li>Observe the live message exchange between the agent, the queues, and the function in your terminal.</li>
+</ul>
+
+<h3>Prerequisites</h3>
+<ul>
+  <li>Python 3.10 or later installed (Python 3.11 recommended).</li>
+  <li><a href="https://learn.microsoft.com/cli/azure/install-azure-cli">Azure CLI</a> installed and signed in (<code>az login</code>).</li>
+  <li><a href="https://learn.microsoft.com/azure/azure-functions/functions-run-local">Azure Functions Core Tools v4.x</a> installed (verify with <code>func --version</code>).</li>
+  <li>An existing Microsoft Foundry project with a deployed chat model (e.g. <code>gpt-4o-mini</code> or <code>gpt-4o</code>).</li>
+  <li>An Azure Storage Account in your resource group.</li>
+</ul>
+
+<blockquote><p><strong>Note on Standard Setup</strong>: The basic agent setup in Foundry is not supported for Azure Functions queue tools because the tool requires queue resources and network routing that only the standard setup capability host provides.</p></blockquote>
+
+<h2 id="task-1-understand-architecture">Task 1: Understand the queue-based tool pattern</h2>
+<p>In standard function calling (Exercise 06), your client code receives a tool call request from the model, executes the function locally, and submits the result back. In this queue-based pattern, <strong>the Foundry Agent Service itself coordinates the entire tool call</strong> directly with Azure Storage queues:</p>
+
+<table>
+  <thead>
+    <tr><th>Step</th><th>Action</th><th>Executing Component</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>1. Model Decision</strong></td><td>The user asks a weather question. The model decides to invoke the <code>GetWeather</code> tool with <code>{"location": "Seattle, WA"}</code>.</td><td>Foundry Model</td></tr>
+    <tr><td><strong>2. Queue Request</strong></td><td>Foundry Agent Service places a message into <code>get-weather-input-queue</code> containing the arguments and an opaque <code>CorrelationId</code>.</td><td>Foundry Agent Service (Project Identity)</td></tr>
+    <tr><td><strong>3. Function Trigger</strong></td><td>The queue trigger invokes your Function code to process the message and compute the weather.</td><td>Azure Functions App</td></tr>
+    <tr><td><strong>4. Queue Response</strong></td><td>The Function writes the result to <code>get-weather-output-queue</code>, preserving the exact <code>CorrelationId</code>.</td><td>Azure Functions App</td></tr>
+    <tr><td><strong>5. Correlation & Resume</strong></td><td>The agent reads the output queue, matches the <code>CorrelationId</code>, and continues the conversation to answer the user.</td><td>Foundry Agent Service</td></tr>
+  </tbody>
+</table>
+
+<h2 id="task-2-create-storage-queues">Task 2: Create the Azure Storage Queues</h2>
+<p>Create the input and output queues in your Azure Storage account using your Microsoft Entra identity.</p>
+
+<ol>
+<li><p>Open a PowerShell terminal and set your resource variables:</p>
+<pre><code class="language-powershell">$RESOURCE_GROUP = "your-foundry-resource-group"
+$STORAGE_ACCOUNT_NAME = "yourstorageaccountname"
+</code></pre></li>
+<li><p>Retrieve the primary Queue service endpoint URL:</p>
+<pre><code class="language-powershell">$STORAGE_QUEUE_ENDPOINT = az storage account show `
+    --resource-group $RESOURCE_GROUP `
+    --name $STORAGE_ACCOUNT_NAME `
+    --query primaryEndpoints.queue --output tsv
+
+Write-Host "Queue Endpoint: $STORAGE_QUEUE_ENDPOINT"
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: The output resembles: <code>https://&lt;storage-account-name&gt;.queue.core.windows.net/</code>.</p></blockquote></li>
+<li><p>Create the input and output queues using Entra ID authentication:</p>
+<pre><code class="language-powershell">az storage queue create --name "get-weather-input-queue" `
+    --account-name $STORAGE_ACCOUNT_NAME --auth-mode login
+
+az storage queue create --name "get-weather-output-queue" `
+    --account-name $STORAGE_ACCOUNT_NAME --auth-mode login
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Both queues are created successfully.</p></blockquote></li>
+</ol>
+
+<h2 id="task-3-configure-rbac">Task 3: Configure required RBAC role assignments</h2>
+<p>To secure access without API keys, two identities need the <strong>Storage Queue Data Contributor</strong> role on your Storage account:</p>
+
+<ol>
+<li><p><strong>Assign to the Foundry Project Managed Identity</strong>:<br>
+The agent runtime uses the project's system-assigned managed identity to drop messages into the input queue and poll the output queue.</p>
+<pre><code class="language-powershell"># Get your Foundry Project Principal ID from the project resource
+$PROJECT_RESOURCE_ID = az resource list --resource-group $RESOURCE_GROUP `
+    --resource-type "Microsoft.CognitiveServices/accounts/projects" --query "[0].id" -o tsv
+
+$PROJECT_PRINCIPAL_ID = az resource show --ids $PROJECT_RESOURCE_ID `
+    --query "identity.principalId" -o tsv
+
+$STORAGE_ACCOUNT_ID = az storage account show --resource-group $RESOURCE_GROUP `
+    --name $STORAGE_ACCOUNT_NAME --query "id" -o tsv
+
+az role assignment create `
+    --assignee-object-id $PROJECT_PRINCIPAL_ID `
+    --assignee-principal-type ServicePrincipal `
+    --role "Storage Queue Data Contributor" `
+    --scope $STORAGE_ACCOUNT_ID
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Output confirms the role assignment for the project's principal ID.</p></blockquote></li>
+<li><p><strong>Assign to your signed-in developer account</strong>:<br>
+Required to run the Azure Function locally and interact with the queue using Azure CLI or local Python scripts.</p>
+<pre><code class="language-powershell">$MY_USER_ID = az ad signed-in-user show --query "id" -o tsv
+
+az role assignment create `
+    --assignee-object-id $MY_USER_ID `
+    --assignee-principal-type User `
+    --role "Storage Queue Data Contributor" `
+    --scope $STORAGE_ACCOUNT_ID
+</code></pre>
+<blockquote><p><strong>Note</strong>: Azure role assignments can take 1 to 2 minutes to propagate across Microsoft Entra ID.</p></blockquote></li>
+</ol>
+
+<h2 id="task-4-build-azure-function">Task 4: Configure and run the Azure Function</h2>
+<p>In this task, you run the queue-triggered Azure Function locally using Azure Functions Core Tools. The function listens to the cloud storage queue via identity-based connections.</p>
+
+<ol>
+<li><p>Navigate to the <code>function_app</code> subdirectory in <code>labs/06.1-azure-functions-tool</code>:</p>
+<pre><code class="language-powershell">cd labs/06.1-azure-functions-tool/function_app
+</code></pre></li>
+<li><p>Inspect <code>function_app.py</code>:</p>
+<pre><code class="language-python">import json
+import logging
+import azure.functions as func
+
+app = func.FunctionApp()
+
+INPUT_QUEUE = "get-weather-input-queue"
+OUTPUT_QUEUE = "get-weather-output-queue"
+
+# Queue trigger receives agent tool calls from the input queue
+# and returns results through the output queue binding
+@app.function_name(name="GetWeather")
+@app.queue_trigger(arg_name="msg", queue_name=INPUT_QUEUE, connection="STORAGE_CONNECTION")
+@app.queue_output(arg_name="reply", queue_name=OUTPUT_QUEUE, connection="STORAGE_CONNECTION")
+def get_weather(msg: func.QueueMessage, reply: func.Out[str]) -> None:
+    raw = msg.get_body().decode("utf-8")
+    logging.info("Message from agent: %s", raw)
+
+    try:
+        messagepayload = json.loads(raw)
+
+        # Extract the function arguments sent by the agent
+        function_args = messagepayload.get("function_args") or messagepayload
+        location = function_args.get("location", "Unknown location")
+
+        weather_result = f"The weather in {location} is 22 degrees Celsius and sunny."
+
+        # IMPORTANT: Return result with the CorrelationId from the original request!
+        response_message = {
+            "Value": weather_result,
+            "CorrelationId": messagepayload["CorrelationId"],
+        }
+        reply.set(json.dumps(response_message))
+        logging.info("Reply to agent: %s", json.dumps(response_message))
+
+    except Exception as e:
+        logging.error("Error processing queue message: %s", e)
+</code></pre>
+<blockquote class="warn"><p><strong>CRITICAL</strong>: The response message <strong>must</strong> include <code>"CorrelationId": messagepayload["CorrelationId"]</code>. The agent service uses this correlation ID to match the function output to the suspended turn. If omitted, the agent will never resume.</p></blockquote></li>
+<li><p>Create <code>local.settings.json</code> from the example:</p>
+<pre><code class="language-powershell">Copy-Item local.settings.json.example local.settings.json
+</code></pre></li>
+<li><p>Edit <code>local.settings.json</code> and replace <code>&lt;your-storage-account&gt;</code> with your actual storage account name:</p>
+<pre><code class="language-json">{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "STORAGE_CONNECTION__queueServiceUri": "https://yourstorageaccountname.queue.core.windows.net"
+  }
+}
+</code></pre></li>
+<li><p>Start the Function App locally:</p>
+<pre><code class="language-powershell">func start
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Output shows the host starting and confirms: <code>Functions: GetWeather: queueTrigger</code>.<br>
+<strong>Leave this terminal open and running!</strong> It is actively listening to <code>get-weather-input-queue</code>.</p></blockquote></li>
+</ol>
+
+<h2 id="task-5-build-agent">Task 5: Define the Azure Function tool and run the agent</h2>
+<p>Now open a <strong>new, second terminal</strong> to write and run the agent script.</p>
+
+<ol>
+<li><p>In the second terminal, navigate to <code>labs/06.1-azure-functions-tool</code>:</p>
+<pre><code class="language-powershell">cd labs/06.1-azure-functions-tool
+</code></pre></li>
+<li><p>Create and activate a virtual environment, then install requirements:</p>
+<pre><code class="language-powershell">py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install "azure-ai-projects>=2.0.0" azure-identity python-dotenv
+</code></pre></li>
+<li><p>Create a <code>.env</code> file from <code>.env.example</code>:</p>
+<pre><code class="language-powershell">Copy-Item .env.example .env
+</code></pre>
+<p>Fill in your Foundry project details in <code>.env</code>:</p>
+<pre><code class="language-text">PROJECT_ENDPOINT=https://your-resource.services.ai.azure.com/api/projects/your-project
+STORAGE_QUEUE_ENDPOINT=https://yourstorageaccountname.queue.core.windows.net
+MODEL_DEPLOYMENT=gpt-4o-mini
+</code></pre></li>
+<li><p>Inspect <code>agent.py</code>:</p>
+<pre><code class="language-python">import os
+from azure.identity import DefaultAzureCredential
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import (
+    AzureFunctionBinding,
+    AzureFunctionDefinition,
+    AzureFunctionStorageQueue,
+    AzureFunctionDefinitionFunction,
+    AzureFunctionTool,
+    PromptAgentDefinition,
+)
+from dotenv import load_dotenv
+
+load_dotenv()
+
+PROJECT_ENDPOINT = os.environ["PROJECT_ENDPOINT"]
+STORAGE_QUEUE_ENDPOINT = os.environ["STORAGE_QUEUE_ENDPOINT"]
+MODEL = os.environ.get("MODEL_DEPLOYMENT", "gpt-4o-mini")
+
+# 1. Create project client
+project = AIProjectClient(
+    endpoint=PROJECT_ENDPOINT,
+    credential=DefaultAzureCredential(),
+)
+openai = project.get_openai_client()
+
+# 2. Define the Azure Function tool
+tool = AzureFunctionTool(
+    azure_function=AzureFunctionDefinition(
+        input_binding=AzureFunctionBinding(
+            storage_queue=AzureFunctionStorageQueue(
+                queue_name="get-weather-input-queue",
+                queue_service_endpoint=STORAGE_QUEUE_ENDPOINT,
+            )
+        ),
+        output_binding=AzureFunctionBinding(
+            storage_queue=AzureFunctionStorageQueue(
+                queue_name="get-weather-output-queue",
+                queue_service_endpoint=STORAGE_QUEUE_ENDPOINT,
+            )
+        ),
+        function=AzureFunctionDefinitionFunction(
+            name="GetWeather",
+            description="Get the weather in a location.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The location to look up (e.g. Seattle, WA).",
+                    }
+                },
+                "required": ["location"],
+            },
+        ),
+    )
+)
+
+# 3. Create a versioned prompt agent
+agent = project.agents.create_version(
+    agent_name="azure-function-agent-get-weather",
+    definition=PromptAgentDefinition(
+        model=MODEL,
+        instructions="You are a helpful support agent. When asked about the weather, use the GetWeather tool.",
+        tools=[tool],
+    ),
+)
+print(f"Agent created (id: {agent.id}, name: {agent.name}, version: {agent.version})")
+
+# 4. Ask a question that triggers the tool
+print("\nAsking: What is the weather in Seattle, WA?")
+response = openai.responses.create(
+    input="What is the weather in Seattle, WA?",
+    extra_body={"agent_reference": {"name": agent.name, "type": "agent_reference"}},
+)
+
+print(f"\nResponse from agent:\n{response.output_text}")
+</code></pre></li>
+<li><p>Run the agent script:</p>
+<pre><code class="language-powershell">python agent.py
+</code></pre></li>
+</ol>
+
+<h2 id="task-6-observe-roundtrip">Task 6: Observe the asynchronous execution</h2>
+<ol>
+<li><p>Look at your <strong>Function App terminal</strong> (where <code>func start</code> is running). You will see the incoming message arriving over the storage queue:</p>
+<pre><code class="language-output">Message from agent: {"function_args": {"location": "Seattle, WA"}, "function_name": "GetWeather", "CorrelationId": "4a7b9c1d-..."}
+Reply to agent: {"Value": "The weather in Seattle, WA is 22 degrees Celsius and sunny.", "CorrelationId": "4a7b9c1d-..."}
+Executed 'Functions.GetWeather' (Succeeded, Id=..., Duration=14ms)
+</code></pre></li>
+<li><p>Look at your <strong>agent script terminal</strong>. The agent picks up the reply from <code>get-weather-output-queue</code> and answers:</p>
+<pre><code class="language-output">Agent created (id: agent_xyz123, name: azure-function-agent-get-weather, version: 1)
+
+Asking: What is the weather in Seattle, WA?
+
+Response from agent:
+The weather in Seattle, WA is currently 22 degrees Celsius and sunny.
+</code></pre>
+<blockquote class="ok"><p><strong>Success!</strong> Your agent planned the tool call, wrote to the cloud storage queue, your local function processed the request, and the agent returned the answer — all without an HTTP endpoint!</p></blockquote></li>
+</ol>
+
+<h2 id="task-7-clean-up">Task 7: Clean up</h2>
+<ol>
+<li><p>In the Function terminal, press <code>Ctrl + C</code> to stop the function host.</p></li>
+<li><p>Delete the agent version using the Foundry SDK:</p>
+<pre><code class="language-python">project.agents.delete_version(agent_name="azure-function-agent-get-weather", agent_version=agent.version)
+</code></pre></li>
+<li><p>If you no longer need the queues, delete them:</p>
+<pre><code class="language-powershell">az storage queue delete --name "get-weather-input-queue" --account-name $STORAGE_ACCOUNT_NAME --auth-mode login
+az storage queue delete --name "get-weather-output-queue" --account-name $STORAGE_ACCOUNT_NAME --auth-mode login
+</code></pre></li>
+</ol>
+
+<h2 id="knowledge-check">Knowledge check</h2>
+<details class="kc"><summary>1. Why is the standard agent setup required for Azure Functions queue tools?</summary>
+<ul>
+  <li>A. Basic setup does not support Python</li>
+  <li>B. Only the standard setup capability host has network and identity routing to access customer-owned Azure Storage queues</li>
+  <li>C. Basic setup does not allow tools</li>
+</ul>
+<div class="ans"><p><strong>Answer: B</strong></p><p>Basic setup uses shared internal Microsoft storage. The capability host in a standard setup connects the agent service to your own Azure resources.</p></div></details>
+
+<details class="kc"><summary>2. What happens if your Function does not return the request's CorrelationId in the output queue?</summary>
+<ul>
+  <li>A. The Function crashes with a 500 error</li>
+  <li>B. The agent cannot match the response to the suspended turn and times out waiting for the tool result</li>
+  <li>C. The agent answers without the tool result</li>
+</ul>
+<div class="ans"><p><strong>Answer: B</strong></p><p>The CorrelationId is the only mechanism the agent service has to correlate asynchronous responses with pending requests.</p></div></details>
+
+<details class="kc"><summary>3. Which RBAC role must be granted to the Foundry project managed identity?</summary>
+<ul>
+  <li>A. Storage Blob Data Reader</li>
+  <li>B. Storage Queue Data Contributor</li>
+  <li>C. Contributor</li>
+</ul>
+<div class="ans"><p><strong>Answer: B</strong></p><p>The agent service needs `Storage Queue Data Contributor` to write messages to the input queue and poll/read messages from the output queue.</p></div></details>
+
+<h2 id="summary">Summary</h2>
+<p>You built an end-to-end asynchronous agent tool using Microsoft Foundry and Azure Functions:</p>
+<ul>
+  <li>Created dedicated input and output Azure Storage queues.</li>
+  <li>Configured Entra ID RBAC permissions for the Foundry project identity and developer account.</li>
+  <li>Implemented a queue-triggered Azure Function that preserves request correlation IDs.</li>
+  <li>Defined an <code>AzureFunctionTool</code> and observed serverless tool calling via queue storage.</li>
+</ul>
+
+<h2 id="references">Further reading</h2>
+<ul>
+  <li><a href="https://learn.microsoft.com/azure/foundry/agents/how-to/tools/azure-functions?pivots=python">Microsoft Learn: Use Azure Functions with Foundry Agent Service</a></li>
+  <li><a href="https://learn.microsoft.com/azure/foundry/agents/concepts/standard-agent-setup">Standard agent setup concepts</a></li>
+  <li><a href="https://learn.microsoft.com/azure/azure-functions/functions-bindings-storage-queue">Azure Queue storage triggers and bindings for Azure Functions</a></li>
+</ul>
+
+<div class="pager"><a href="https://microsoftlearning.github.io/mslearn-ai-agents/Instructions/Exercises/02-agent-custom-tools.html">&#8592; Use a custom function in an AI agent</a><a href="05-vector-index.html">Build a vector index &#8594;</a></div>
+</article>
+</main>
+</div>
+<footer class="site"><div class="wrap">
+Synthetic training content for the Microsoft Foundry AI Agent Engineering workshop. Fictional organisation: Acme Public Sector Pty Ltd.
+</div></footer>
+</body>
+</html>
