@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Host an agent tool on Azure Functions, connected by queues | Microsoft Foundry AI Agent Engineering</title>
+<title>Exercise 06.1 &mdash; Host an Azure Functions tool (queue-based) | Microsoft Foundry AI Agent Engineering</title>
 <link rel="stylesheet" href="../../assets/css/style.css">
 </head>
 <body>
@@ -29,7 +29,7 @@
   <li><a href="#references">Further reading</a></li>
 </ul></aside>
 <article>
-<h1 id="top">Host an agent tool on Azure Functions, connected by queues</h1>
+<h1 id="top">Exercise 06.1 &mdash; Host an Azure Functions tool (queue-based)</h1>
 <p>In this exercise, you connect a Microsoft Foundry agent to serverless custom tools hosted on <strong>Azure Functions</strong> using an asynchronous, queue-based architecture. Instead of calling an HTTP endpoint directly from client code, the Foundry Agent Service drops tool invocation requests onto an Azure Storage queue, your Function processes them with scale-to-zero serverless compute, and the answer is returned over an output queue.</p>
 <p>This pattern provides enterprise isolation, automatic retry resilience, and zero-idle-cost execution for long-running workflows.</p>
 <p>This exercise takes approximately <strong>120</strong> minutes.</p>
@@ -389,7 +389,7 @@ Prove that the function received and processed the real queue message:</p>
   <li><a href="https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan">Azure Functions Flex Consumption plan</a></li>
 </ul>
 
-<div class="pager"><a href="14-secure-and-govern.html">&#8592; Secure and govern</a><a href="../../index.html">All exercises &#8594;</a></div>
+<div class="pager"><a href="https://microsoftlearning.github.io/mslearn-ai-agents/Instructions/Exercises/02-agent-custom-tools.html">&#8592; Use a custom function in an AI agent</a><a href="05-vector-index.html">Build a vector index &#8594;</a></div>
 </article>
 </main>
 </div>
