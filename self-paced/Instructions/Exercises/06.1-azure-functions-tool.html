@@ -15,26 +15,21 @@
 <main class="row">
 <aside class="toc"><h4>On this page</h4><ul>
   <li><a href="#before-you-start">Before you start</a></li>
-  <li><a href="#task-1-understand-architecture">Task 1: Understand the queue-based tool architecture</a></li>
-  <li><a href="#task-2-deep-dive-files">Task 2: Deep dive into the Bicep and YAML files</a></li>
-  <li><a href="#task-3-what-happens-azd">Task 3: What happens under the hood during azd CLI commands</a></li>
-  <li><a href="#task-4-init-and-provision">Task 4: Initialize the template with azd init and provision with azd provision</a></li>
-  <li><a href="#task-5-deploy-function">Task 5: Deploy the Function App with azd deploy</a></li>
-  <li><a href="#task-6-verify-rbac">Task 6: Verify identities and RBAC permissions</a></li>
-  <li><a href="#task-7-build-agent-script">Task 7: Build the agent script with AzureFunctionTool</a></li>
-  <li><a href="#task-8-run-agent-observe">Task 8: Run the agent and observe the round-trip</a></li>
-  <li><a href="#task-9-clean-up">Task 9: Clean up resources</a></li>
+  <li><a href="#task-1-init-template">Task 1: Sign in and initialize the project template</a></li>
+  <li><a href="#task-2-explore-files">Task 2: Understand the template files (YAML and Bicep)</a></li>
+  <li><a href="#task-3-provision">Task 3: Provision cloud resources with azd provision</a></li>
+  <li><a href="#task-4-deploy">Task 4: Deploy the Function code with azd deploy</a></li>
+  <li><a href="#task-5-run-agent">Task 5: Run the Python agent and test the tool</a></li>
+  <li><a href="#task-6-clean-up">Task 6: Clean up resources</a></li>
   <li><a href="#knowledge-check">Knowledge check</a></li>
   <li><a href="#summary">Summary</a></li>
   <li><a href="#references">Further reading</a></li>
 </ul></aside>
 <article>
 <h1 id="top">Exercise 06.1 &mdash; Host an Azure Functions tool for a Foundry agent (queue-based)</h1>
-<p>In this exercise, you provision a complete <strong>Standard Setup</strong> Microsoft Foundry environment and deploy a serverless <strong>Azure Functions</strong> custom tool connected through Azure Storage queues. Instead of your application invoking an HTTP endpoint synchronously, the <strong>Foundry Agent Service itself</strong> coordinates tool calls directly with Azure Queue Storage, providing automated retries, scale-to-zero pricing, and clean network and identity isolation.</p>
-<p>You will explore the Infrastructure as Code (Bicep) and project manifest (<code>azure.yaml</code>) files, learn what occurs under the hood during each <code>azd</code> command, deploy the Function, and watch a multi-turn conversation resolve tool calls through cloud queues.</p>
-<p>This exercise takes approximately <strong>90</strong> minutes.</p>
-
-<blockquote class="warn"><p><strong>Standard Setup Requirement</strong>: This exercise uses the <strong>Standard Setup</strong> pattern in Microsoft Foundry. Basic agent setup is not supported for Azure Functions queue tools because the agent runtime requires queue storage resources and network routing provided exclusively by the capability host in the standard setup.</p></blockquote>
+<p>In this exercise, you connect a Microsoft Foundry agent to a serverless <strong>Azure Function</strong> using Azure Storage queues. Instead of your client code calling an HTTP endpoint, the <strong>Foundry Agent Service itself</strong> drops tool requests onto an Azure Storage queue, your serverless Function processes the request, and the answer is returned through an output queue.</p>
+<p>This provides scale-to-zero serverless hosting, automatic retries, and clean security isolation without managing API keys or connection strings.</p>
+<p>This exercise takes approximately <strong>60&ndash;75</strong> minutes.</p>
 
 <div class="meta">
   <div><strong>Lab folder</strong>: <code>labs/06.1-azure-functions-tool</code></div>
@@ -44,59 +39,42 @@
 <div class="tags"><span class="tag alt">Azure Functions</span><span class="tag">Standard Setup</span><span class="tag">Bicep</span><span class="tag">azd</span><span class="tag">Queue Storage</span></div>
 
 <h2 id="before-you-start">Before you start</h2>
-<h3>What you will do</h3>
-<ul>
-  <li>Understand the asynchronous queue-based tool architecture and why it requires standard setup.</li>
-  <li>Analyze the <code>azure.yaml</code> project manifest, <code>infra/main.bicep</code> template, and parameter files.</li>
-  <li>Understand what the Azure Developer CLI (<code>azd</code>) does during <code>init</code>, <code>provision</code>, and <code>deploy</code>.</li>
-  <li>Provision a complete standard-setup Foundry project, model deployment, Cosmos DB, AI Search, and Flex Consumption Function app using <code>azd provision</code>.</li>
-  <li>Deploy the serverless queue-triggered Python function using <code>azd deploy</code>.</li>
-  <li>Verify that the project and function managed identities hold the required <code>Storage Queue Data Contributor</code> roles.</li>
-  <li>Write an agent script using <code>AzureFunctionTool</code> from <code>azure-ai-projects</code>, ask a question, and observe the live queue round-trip.</li>
-  <li>Permanently purge the deployment to release model quota using <code>azd down --purge</code>.</li>
-</ul>
-
 <h3>Prerequisites</h3>
 <ul>
   <li>Python 3.10 or 3.11 installed.</li>
   <li><a href="https://learn.microsoft.com/cli/azure/install-azure-cli">Azure CLI</a> installed and signed in (<code>az login</code>).</li>
   <li><a href="https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd">Azure Developer CLI (<code>azd</code>)</a> installed (verify with <code>azd version</code>).</li>
-  <li>An active Azure subscription with Owner or Contributor and User Access Administrator roles (to create resources and assign RBAC roles).</li>
-  <li>Quota for chat models (such as <code>gpt-5.1</code>, <code>gpt-4.1-mini</code>, or <code>gpt-4o-mini</code>) in a supported Flex Consumption region (e.g. <code>australiaeast</code>, <code>eastus2</code>, or <code>swedencentral</code>).</li>
+  <li>An active Azure subscription with permissions to create resources and assign roles.</li>
 </ul>
 
-<h2 id="task-1-understand-architecture">Task 1: Understand the queue-based tool architecture</h2>
-<p>Before running commands, examine the difference between traditional function calling (Exercise 06) and this queue-based pattern:</p>
+<h2 id="task-1-init-template">Task 1: Sign in and initialize the project template</h2>
+<p>Start by opening a terminal and authenticating with Azure.</p>
 
-<table>
-  <thead>
-    <tr><th>Dimension</th><th>HTTP Function Calling (Exercise 06)</th><th>Queue-Based Tool (Exercise 06.1)</th></tr>
-  </thead>
-  <tbody>
-    <tr><td><strong>Caller</strong></td><td>Your application client code receives the tool call and executes it.</td><td>The <strong>Foundry Agent Service itself</strong> executes the tool call in the cloud.</td></tr>
-    <tr><td><strong>Communication</strong></td><td>Synchronous REST HTTP. The caller waits for an instant response.</td><td>Asynchronous messages over Azure Storage queues with built-in retries.</td></tr>
-    <tr><td><strong>Foundry Setup</strong></td><td>Basic or Standard setup.</td><td><strong>Standard Setup only</strong> (requires Capability Host).</td></tr>
-    <tr><td><strong>Security Boundary</strong></td><td>HTTP endpoints with keys or bearer tokens.</td><td>Identity-based access (Microsoft Entra ID) with zero shared keys.</td></tr>
-    <tr><td><strong>Best For</strong></td><td>Real-time UI lookups, instant calculations.</td><td>Long-running jobs, background processing, resilient enterprise integrations.</td></tr>
-  </tbody>
-</table>
-
-<h3>The Step-by-Step Message Flow</h3>
 <ol>
-  <li><strong>Model Invocation</strong>: When the user asks a question, the LLM decides to call the <code>GetWeather</code> tool and prepares the arguments (e.g. <code>{"location": "Seattle, WA"}</code>).</li>
-  <li><strong>Input Queue Dispatch</strong>: Foundry Agent Service generates a unique <code>CorrelationId</code>, packages the arguments into a JSON payload, and writes it directly to <code>get-weather-input-queue</code> using the Foundry Project's managed identity.</li>
-  <li><strong>Function Execution</strong>: An Azure Storage queue trigger wakes the Azure Function in the Flex Consumption plan. The function parses the payload, executes business logic, and prepares the output.</li>
-  <li><strong>Output Queue Reply</strong>: The function writes its JSON answer to <code>get-weather-output-queue</code>, <strong>echoing the exact <code>CorrelationId</code></strong>.</li>
-  <li><strong>Correlation & Turn Completion</strong>: Foundry Agent Service reads the output queue, matches the <code>CorrelationId</code> to the pending turn, feeds the tool output back into the model, and completes the response.</li>
+<li><p>Navigate to the lab directory:</p>
+<pre><code class="language-powershell">cd labs/06.1-azure-functions-tool
+</code></pre></li>
+<li><p>Sign in with the Azure CLI, and configure <code>azd</code> to reuse your login credentials:</p>
+<pre><code class="language-powershell">az login
+azd config set auth.useAzCliAuth true
+azd auth login --check-status
+</code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Output confirms <code>Logged in to Azure as you@yourdomain.com</code>.</p></blockquote></li>
+<li><p>Initialize the project template using the official Microsoft template command:</p>
+<pre><code class="language-powershell">azd init --template azure-functions-ai-services-agent-python
+</code></pre>
+<p><strong>What this does</strong>: <code>azd</code> connects to Microsoft's GitHub repository (<a href="https://github.com/Azure-Samples/azure-functions-ai-services-agent-python">Azure-Samples/azure-functions-ai-services-agent-python</a>) and downloads the template files directly into your folder.</p>
+<p>When prompted for an environment name, enter:</p>
+<pre><code class="language-text">azfn-agent-lab
+</code></pre>
+<blockquote class="note"><p><strong>Note</strong>: In this workshop repository, these template files (<code>azure.yaml</code>, <code>infra/</code>, <code>app/</code>) are already pre-loaded in <code>labs/06.1-azure-functions-tool</code>. If prompted to overwrite existing files, select <strong>Keep my existing files</strong> or run <code>azd env new azfn-agent-lab</code>.</p></blockquote></li>
 </ol>
 
-<h2 id="task-2-deep-dive-files">Task 2: Deep dive into the Bicep and YAML files</h2>
-<p>Navigate to the lab directory <code>labs/06.1-azure-functions-tool</code> to inspect the configuration files that drive this deployment:</p>
-<pre><code class="language-powershell">cd labs/06.1-azure-functions-tool
-</code></pre>
+<h2 id="task-2-explore-files">Task 2: Understand the template files (YAML and Bicep)</h2>
+<p>Now that the template is initialized, look at what was downloaded to understand how everything connects.</p>
 
-<h3>1. The azd Manifest: <code>azure.yaml</code></h3>
-<p>Open <code>azure.yaml</code>. This file is the schema contract between the Azure Developer CLI and your project:</p>
+<h3>1. <code>azure.yaml</code> &mdash; The Project Manifest</h3>
+<p>Open <code>azure.yaml</code> in the root of the lab folder:</p>
 <pre><code class="language-yaml"># yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 name: azure-functions-tool-lab
 services:
@@ -106,167 +84,25 @@ services:
     host: function
 </code></pre>
 <ul>
-  <li><code>name</code>: Unique project identifier in <code>azd</code>.</li>
-  <li><code>services.api</code>: Declares an application service named <code>api</code>.</li>
-  <li><code>project: ./app/</code>: Specifies the directory containing the Function app code (<code>function_app.py</code>, <code>host.json</code>, <code>requirements.txt</code>).</li>
-  <li><code>language: python</code>: Directs <code>azd</code> to use Python packaging and remote build.</li>
-  <li><code>host: function</code>: Instructs <code>azd deploy</code> to package this service as an Azure Function App deployment package.</li>
+  <li><code>name</code>: The name of this <code>azd</code> application.</li>
+  <li><code>services.api</code>: Tells <code>azd</code> that there is an application service named <code>api</code>.</li>
+  <li><code>project: ./app/</code>: Points to the directory containing your Python Function code.</li>
+  <li><code>host: function</code>: Tells <code>azd</code> that this code should be packaged and deployed to an Azure Function App.</li>
 </ul>
 
-<h3>2. The Orchestration Template: <code>infra/main.bicep</code></h3>
-<p>Open <code>infra/main.bicep</code>. It is targeted at subscription scope (<code>targetScope = 'subscription'</code>) and orchestrates the creation of all resources in structured sequence:</p>
-<ol>
-  <li><strong>Resource Group (<code>rg</code>)</strong>: Creates the container holding all regional resources.</li>
-  <li><strong>User-Assigned Managed Identity (<code>apiUserAssignedIdentity</code>)</strong>: Created for the Function App so it can authenticate to Azure Storage without storing connection strings.</li>
-  <li><strong>App Service Plan (<code>appServicePlan</code>)</strong>: Deploys an <code>FC1</code> SKU serverless Flex Consumption plan for high elasticity and scale-to-zero compute.</li>
-  <li><strong>Application Insights & Log Analytics (<code>monitoring</code>)</strong>: Provides distributed tracing and execution telemetry.</li>
-  <li><strong>Storage Account & Queues (<code>storage</code>)</strong>: Provisions the integration storage account and declaratively creates two queues: <code>get-weather-input-queue</code> and <code>get-weather-output-queue</code>.</li>
-  <li><strong>AI Dependent Resources (<code>aiDependencies</code>)</strong>:
-    <ul>
-      <li>An Azure AI Services account (Foundry Account).</li>
-      <li>A model deployment (e.g. <code>gpt-5.1</code> or <code>gpt-4.1-mini</code> with <code>GlobalStandard</code> SKU).</li>
-      <li>An Azure AI Search service (Standard tier).</li>
-      <li>An Azure Cosmos DB account for agent enterprise thread and state storage.</li>
-      <li>A dedicated storage account for AI project data.</li>
-    </ul>
-  </li>
-  <li><strong>AI Project (<code>aiProject</code>)</strong>: Creates the Microsoft Foundry Project workspace inside the AI Services account.</li>
-  <li><strong>Function App (<code>api</code>)</strong>: Deploys the Python Flex Consumption Function App and configures its app settings:
-    <pre><code class="language-bicep">appSettings: {
-  PROJECT_ENDPOINT: aiProject.outputs.projectEndpoint
-  STORAGE_CONNECTION__queueServiceUri: 'https://${storage.outputs.name}.queue.${environment().suffixes.storage}'
-  STORAGE_CONNECTION__clientId: apiUserAssignedIdentity.outputs.clientId
-  STORAGE_CONNECTION__credential: 'managedidentity'
-}
-</code></pre>
-  </li>
-  <li><strong>Capability Host (<code>aiProjectCapabilityHost</code>) &mdash; What makes it a Standard Setup</strong>:
-    <p>This resource (<code>Microsoft.CognitiveServices/accounts/projects/capabilityHosts</code>) binds the Foundry project to your Cosmos DB, Azure AI Search, and AI Storage. This turns a basic project into a <strong>Standard Setup</strong> capable of reaching custom storage queues.</p>
-  </li>
-  <li><strong>RBAC Role Assignments (<code>projectRoleAssignments</code> & <code>rbac</code>)</strong>:
-    <ul>
-      <li>Grants <strong>Storage Queue Data Contributor</strong> to the Foundry Project's managed identity.</li>
-      <li>Grants <strong>Storage Queue Data Contributor</strong> to the Function App's user-assigned managed identity.</li>
-      <li>Grants <strong>Cosmos DB Built-in Data Contributor</strong> on database scope (<code>/dbs/enterprise_memory</code>) so the agent runtime can store version definitions.</li>
-    </ul>
-  </li>
-</ol>
-
-<h3>3. Parameters: <code>infra/main.parameters.json</code></h3>
-<p>Open <code>infra/main.parameters.json</code>. It passes dynamic environment values into <code>main.bicep</code>:</p>
-<pre><code class="language-json">{
-  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-  "contentVersion": "1.0.0.0",
-  "parameters": {
-    "environmentName": { "value": "${AZURE_ENV_NAME}" },
-    "location": { "value": "${AZURE_LOCATION}" },
-    "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
-    "vnetEnabled": { "value": false },
-    "modelName": { "value": "gpt-5.1" }
-  }
-}
-</code></pre>
-<p>The tokens <code>${AZURE_ENV_NAME}</code> and <code>${AZURE_LOCATION}</code> are populated automatically by <code>azd</code> from your active environment.</p>
-
-<h2 id="task-3-what-happens-azd">Task 3: What happens under the hood during azd CLI commands</h2>
-<p>Understanding the exact execution lifecycle of <code>azd</code> helps troubleshoot cloud deployments:</p>
-
-<table>
-  <thead>
-    <tr><th>Command</th><th>What Happens Behind the Scenes</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><strong><code>azd init --template azure-functions-ai-services-agent-python</code></strong></td>
-      <td>Clones Microsoft's official template repository from GitHub (<code>Azure-Samples/azure-functions-ai-services-agent-python</code>). It automatically downloads <code>azure.yaml</code>, the <code>infra/</code> folder with all Bicep templates, and the <code>app/</code> folder with the Python Azure Function code into your directory, then prompts for an environment name.</td>
-    </tr>
-    <tr>
-      <td><strong><code>azd env new &lt;name&gt;</code></strong></td>
-      <td>Creates a hidden folder <code>.azure/&lt;name&gt;/</code> and initializes a local <code>.env</code> file. This file holds environment variables (like <code>AZURE_LOCATION</code> and <code>AZURE_SUBSCRIPTION_ID</code>) isolated to this specific deployment.</td>
-    </tr>
-    <tr>
-      <td><strong><code>azd provision</code></strong></td>
-      <td>
-        <ol>
-          <li>Loads <code>azure.yaml</code> and looks for the <code>infra/</code> folder.</li>
-          <li>Reads parameters from <code>.azure/&lt;name&gt;/.env</code> and resolves tokenized values in <code>main.parameters.json</code>.</li>
-          <li>Compiles the Bicep template (and all referenced Bicep modules) into an ARM JSON template in memory.</li>
-          <li>Authenticates with Azure Resource Manager and submits a subscription-level deployment.</li>
-          <li>Polls Azure Resource Manager while resources are provisioned in dependency order.</li>
-          <li>Extracts all Bicep <code>output</code> variables (e.g. <code>PROJECT_ENDPOINT</code>, <code>STORAGE_CONNECTION__queueServiceUri</code>) and appends them to <code>.azure/&lt;name&gt;/.env</code>.</li>
-        </ol>
-      </td>
-    </tr>
-    <tr>
-      <td><strong><code>azd deploy</code></strong></td>
-      <td>
-        <ol>
-          <li>Reads <code>azure.yaml</code> and locates the <code>api</code> service in <code>./app/</code>.</li>
-          <li>Creates a zip package containing <code>function_app.py</code>, <code>host.json</code>, and <code>requirements.txt</code>.</li>
-          <li>Uploads the zip package to the deployment container in Azure Storage.</li>
-          <li>Calls the Azure Functions Flex Consumption deployment API to perform a serverless remote build (Oryx) and starts the function host.</li>
-        </ol>
-      </td>
-    </tr>
-    <tr>
-      <td><strong><code>azd down --purge</code></strong></td>
-      <td>
-        <ol>
-          <li>Identifies the resource group created for this environment.</li>
-          <li>Submits a deletion request to Azure for the entire resource group and all contained resources.</li>
-          <li>The <code>--purge</code> flag explicitly executes a permanent purge on the Cognitive Services (Foundry) resource, preventing soft-delete retention from holding your regional model TPM quota hostage.</li>
-        </ol>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-<h2 id="task-4-init-and-provision">Task 4: Initialize the template with azd init and provision with azd provision</h2>
-<ol>
-<li><p>Sign in with Azure CLI and configure <code>azd</code> to reuse your Azure CLI authentication context:</p>
-<pre><code class="language-powershell">az login
-azd config set auth.useAzCliAuth true
-azd auth login --check-status
-</code></pre></li>
-<li><p><strong>Initialize the project template from Microsoft Learn</strong>:<br>
-In Microsoft's documentation, you initialize the project in an empty folder using the <code>azd init</code> command with Microsoft's official template name:</p>
-<pre><code class="language-powershell">azd init --template azure-functions-ai-services-agent-python
-</code></pre>
-<p>When you run this command:</p>
+<h3>2. <code>infra/main.bicep</code> &mdash; The Cloud Infrastructure</h3>
+<p>Open <code>infra/main.bicep</code>. This Infrastructure-as-Code file creates the entire <strong>Standard Setup</strong> environment in Azure:</p>
 <ul>
-  <li><code>azd</code> contacts GitHub and clones the official Microsoft repository: <code>https://github.com/Azure-Samples/azure-functions-ai-services-agent-python</code>.</li>
-  <li>It downloads <code>azure.yaml</code>, the entire <code>infra/</code> directory of Bicep templates, and the <code>app/</code> directory containing the queue-triggered Azure Function.</li>
-  <li>It prompts you for an environment name (enter <code>azfn-agent-lab</code>).</li>
+  <li><strong>Azure AI Foundry Services Account & Project</strong>: The cloud workspace where your agent lives.</li>
+  <li><strong>Model Deployment</strong>: Deploys a chat model (e.g. <code>gpt-5.1</code> or <code>gpt-4.1-mini</code>).</li>
+  <li><strong>Azure Storage Account with 2 Queues</strong>: Automatically creates <code>get-weather-input-queue</code> and <code>get-weather-output-queue</code>.</li>
+  <li><strong>Flex Consumption Function App</strong>: Serverless compute with scale-to-zero pricing to host your custom tool.</li>
+  <li><strong>Capability Host</strong>: Binds the project to your storage queues. (This capability host is what makes it a <em>Standard Setup</em>).</li>
+  <li><strong>RBAC Roles</strong>: Grants <code>Storage Queue Data Contributor</code> to the Foundry Project identity and the Function App identity so they can communicate securely without passwords.</li>
 </ul>
-<blockquote class="note"><p><strong>Workshop Note</strong>: In this repository, the template files (<code>azure.yaml</code>, <code>infra/</code>, and <code>app/</code>) are <strong>already pre-loaded</strong> inside <code>labs/06.1-azure-functions-tool</code>. If you are working directly in this lab folder, you can simply initialize your environment by running:<br>
-<code>azd env new azfn-agent-lab</code></p></blockquote></li>
-<li><p>Set your deployment region:</p>
-<pre><code class="language-powershell">azd env set AZURE_LOCATION australiaeast
-</code></pre>
-<blockquote><p><strong>Region Tip</strong>: <code>australiaeast</code>, <code>eastus2</code>, and <code>swedencentral</code> are fully supported for both Flex Consumption and Foundry models. Verify model quota with <code>az cognitiveservices usage list -l australiaeast</code>.</p></blockquote></li>
-<li><p>(Optional) Pre-validate the Bicep templates by running a local compilation test:</p>
-<pre><code class="language-powershell">az bicep build --file infra/main.bicep --stdout > $null
-</code></pre></li>
-<li><p>Run <code>azd provision</code> to deploy all cloud infrastructure:</p>
-<pre><code class="language-powershell">azd provision
-</code></pre>
-<p><em>Note: Provisioning takes approximately 10 to 13 minutes because Azure Cosmos DB and the Foundry Capability Host take several minutes to establish secure networking and binding.</em></p>
-<blockquote class="ok"><p><strong>Check</strong>: You will see: <code>SUCCESS: Your application was provisioned in Azure in ...</code> followed by the captured endpoints.</p></blockquote></li>
-<li><p>Inspect the generated environment outputs:</p>
-<pre><code class="language-powershell">azd env get-values
-</code></pre></li>
-<li><p>Create a local <code>.env</code> file from the template:</p>
-<pre><code class="language-powershell">Copy-Item .env.example .env
-</code></pre>
-<p>Populate <code>.env</code> using the values returned by <code>azd env get-values</code>:</p>
-<pre><code class="language-text">PROJECT_ENDPOINT=https://your-resource.services.ai.azure.com/api/projects/your-project
-STORAGE_QUEUE_ENDPOINT=https://your-function-storage.queue.core.windows.net
-MODEL_DEPLOYMENT=gpt-5.1
-</code></pre></li>
-</ol>
 
-<h2 id="task-5-deploy-function">Task 5: Deploy the Function App with azd deploy</h2>
-<p>Inspect the serverless Python code in <code>app/function_app.py</code> before deploying:</p>
+<h3>3. <code>app/function_app.py</code> &mdash; The Serverless Tool</h3>
+<p>Open <code>app/function_app.py</code>. Notice how the function communicates via queues rather than HTTP:</p>
 <pre><code class="language-python">import json
 import logging
 import azure.functions as func
@@ -276,6 +112,7 @@ app = func.FunctionApp()
 INPUT_QUEUE = "get-weather-input-queue"
 OUTPUT_QUEUE = "get-weather-output-queue"
 
+# Triggered whenever the agent drops a message on the input queue
 @app.function_name(name="GetWeather")
 @app.queue_trigger(arg_name="msg", queue_name=INPUT_QUEUE, connection="STORAGE_CONNECTION")
 @app.queue_output(arg_name="reply", queue_name=OUTPUT_QUEUE, connection="STORAGE_CONNECTION")
@@ -287,10 +124,10 @@ def get_weather(msg: func.QueueMessage, reply: func.Out[str]) -> None:
     arguments = request.get("function_args") or request
     location = arguments.get("location", "an unknown place")
 
-    # Custom tool logic: compute simulated temperature
+    # Custom business logic (e.g., API call or database query)
     weather = f"It is {len(location) + 10} degrees and sunny in {location}."
 
-    # CRITICAL: Echo back the exact CorrelationId from the agent request
+    # CRITICAL: CorrelationId must be returned in the response!
     answer = {
         "Value": weather,
         "CorrelationId": request["CorrelationId"],
@@ -298,89 +135,100 @@ def get_weather(msg: func.QueueMessage, reply: func.Out[str]) -> None:
     reply.set(json.dumps(answer))
     logging.info("Reply to agent: %s", json.dumps(answer))
 </code></pre>
+<blockquote class="warn"><p><strong>Critical Requirement</strong>: Notice line <code>"CorrelationId": request["CorrelationId"]</code>. The agent uses this ID to match the function's reply to the question it asked. If you omit it, the agent will never acknowledge the reply and will time out.</p></blockquote>
+
+<h2 id="task-3-provision">Task 3: Provision cloud resources with azd provision</h2>
+<p>Now deploy the cloud infrastructure defined in the Bicep templates.</p>
 
 <ol>
-<li><p>Deploy the function to Azure using <code>azd deploy</code>:</p>
+<li><p>Configure the target Azure region for your environment:</p>
+<pre><code class="language-powershell">azd env set AZURE_LOCATION australiaeast
+</code></pre>
+<blockquote><p><strong>Tip</strong>: <code>australiaeast</code>, <code>eastus2</code>, and <code>swedencentral</code> are supported regions with model quota and Flex Consumption availability.</p></blockquote></li>
+<li><p>Run <code>azd provision</code> to build the entire cloud environment:</p>
+<pre><code class="language-powershell">azd provision
+</code></pre>
+<p><strong>What happens</strong>: <code>azd</code> compiles the Bicep files, creates the Azure Resource Group, provisions the Foundry project, model deployment, Storage queues, and Function App, and configures all RBAC permissions automatically.</p>
+<p><em>Note: Provisioning takes approximately 10 to 12 minutes.</em></p>
+<blockquote class="ok"><p><strong>Check</strong>: Output reports <code>SUCCESS: Your application was provisioned in Azure in ...</code>.</p></blockquote></li>
+<li><p>View the captured deployment outputs:</p>
+<pre><code class="language-powershell">azd env get-values
+</code></pre></li>
+<li><p>Create your local <code>.env</code> file from the template:</p>
+<pre><code class="language-powershell">Copy-Item .env.example .env
+</code></pre>
+<p>Open <code>.env</code> and fill in the values printed by <code>azd env get-values</code>:</p>
+<pre><code class="language-text">PROJECT_ENDPOINT=https://your-resource.services.ai.azure.com/api/projects/your-project
+STORAGE_QUEUE_ENDPOINT=https://your-storage-account.queue.core.windows.net
+MODEL_DEPLOYMENT=gpt-5.1
+</code></pre></li>
+</ol>
+
+<h2 id="task-4-deploy">Task 4: Deploy the Function code with azd deploy</h2>
+<p>Now that the cloud infrastructure exists, upload your Python function code.</p>
+
+<ol>
+<li><p>Deploy the function code to the newly created Flex Consumption Function App:</p>
 <pre><code class="language-powershell">azd deploy
 </code></pre>
-<blockquote class="ok"><p><strong>Check</strong>: Output confirms: <code>SUCCESS: Your application was deployed to Azure in ...</code>.</p></blockquote></li>
-<li><p>Confirm that the Function App registered the queue trigger in Azure:</p>
+<p><strong>What happens</strong>: <code>azd</code> reads <code>azure.yaml</code>, packages the <code>./app/</code> folder, uploads it to Azure, and triggers a remote build to install dependencies and activate the queue listener.</p>
+<blockquote class="ok"><p><strong>Check</strong>: Output confirms <code>SUCCESS: Your application was deployed to Azure</code>.</p></blockquote></li>
+<li><p>Verify that Azure Functions registered the queue trigger:</p>
 <pre><code class="language-powershell">az functionapp function list -g rg-azfn-agent-lab -n YOUR_FUNCTION_APP_NAME --query "[].{name:name, trigger:config.bindings[0].type}" -o table
 </code></pre>
-<blockquote class="ok"><p><strong>Check</strong>: Displays one row: <code>GetWeather</code> with trigger type <code>queue</code>.</p></blockquote></li>
+<blockquote class="ok"><p><strong>Check</strong>: You should see <code>GetWeather</code> with trigger type <code>queue</code>.</p></blockquote></li>
 </ol>
 
-<h2 id="task-6-verify-rbac">Task 6: Verify identities and RBAC permissions</h2>
-<p>To avoid authorization errors when the agent executes, verify that the project and function identities hold the <strong>Storage Queue Data Contributor</strong> role on the storage account:</p>
-<pre><code class="language-powershell">az role assignment list --scope "/subscriptions/YOUR_SUB/resourceGroups/rg-azfn-agent-lab/providers/Microsoft.Storage/storageAccounts/YOUR_FUNCTION_STORAGE" --query "[?roleDefinitionName=='Storage Queue Data Contributor'].principalName" -o tsv
-</code></pre>
-<blockquote class="ok"><p><strong>Check</strong>: You should see the service principal IDs of both the Foundry Project and the Function App.</p></blockquote>
+<h2 id="task-5-run-agent">Task 5: Run the Python agent and test the tool</h2>
+<p>Now run the agent script that tells Foundry to use this Function as a tool.</p>
 
-<h2 id="task-7-build-agent-script">Task 7: Build the agent script with AzureFunctionTool</h2>
-<p>Inspect <code>ask_the_agent.py</code> in the lab directory:</p>
 <ol>
-<li><p><strong>Tool Definition</strong>: Maps the queue names and input schemas:</p>
-<pre><code class="language-python">def describe_the_tool():
-    return AzureFunctionTool(
-        azure_function=AzureFunctionDefinition(
-            input_binding=AzureFunctionBinding(
-                storage_queue=AzureFunctionStorageQueue(
-                    queue_name="get-weather-input-queue",
-                    queue_service_endpoint=STORAGE_QUEUE_ENDPOINT,
-                )
-            ),
-            output_binding=AzureFunctionBinding(
-                storage_queue=AzureFunctionStorageQueue(
-                    queue_name="get-weather-output-queue",
-                    queue_service_endpoint=STORAGE_QUEUE_ENDPOINT,
-                )
-            ),
-            function=AzureFunctionDefinitionFunction(
-                name="GetWeather",
-                description="Get the current weather in a location.",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "location": {"type": "string", "description": "The city or town."}
-                    },
-                    "required": ["location"],
-                },
-            ),
-        )
-    )
-</code></pre></li>
-<li><p><strong>Agent Version Registration</strong>: Attaches the tool to a prompt agent:</p>
-<pre><code class="language-python">def create_the_agent(project):
-    agent = project.agents.create_version(
-        agent_name="azure-function-agent-get-weather",
-        definition=PromptAgentDefinition(
-            model=MODEL,
-            instructions="You are a helpful support agent. When asked about the weather, always use the GetWeather tool.",
-            tools=[describe_the_tool()],
-        ),
-    )
-    print(f"Created agent {agent.name}, version {agent.version}")
-    return agent
-</code></pre></li>
-<li><p><strong>Agent Invocation via Responses API</strong>: Calls the agent with <code>agent_reference</code>:</p>
-<pre><code class="language-python">def ask(client, agent, question):
-    print(f"\nYou: {question}")
-    response = client.responses.create(
-        input=question,
-        extra_body={"agent_reference": {"name": agent.name, "type": "agent_reference"}},
-    )
-    print(f"Agent: {response.output_text}")
-</code></pre></li>
-</ol>
-
-<h2 id="task-8-run-agent-observe">Task 8: Run the agent and observe the round-trip</h2>
-<ol>
-<li><p>Create and activate a virtual environment, then install requirements:</p>
+<li><p>Set up a Python virtual environment and install dependencies:</p>
 <pre><code class="language-powershell">py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "azure-ai-projects>=2.0.0" azure-identity python-dotenv
+pip install -r requirements.txt
 </code></pre></li>
-<li><p>Execute the script:</p>
+<li><p>Inspect <code>ask_the_agent.py</code>. Notice how <code>AzureFunctionTool</code> is defined:</p>
+<pre><code class="language-python"># Define the tool pointing to the input and output queues
+tool = AzureFunctionTool(
+    azure_function=AzureFunctionDefinition(
+        input_binding=AzureFunctionBinding(
+            storage_queue=AzureFunctionStorageQueue(
+                queue_name="get-weather-input-queue",
+                queue_service_endpoint=STORAGE_QUEUE_ENDPOINT,
+            )
+        ),
+        output_binding=AzureFunctionBinding(
+            storage_queue=AzureFunctionStorageQueue(
+                queue_name="get-weather-output-queue",
+                queue_service_endpoint=STORAGE_QUEUE_ENDPOINT,
+            )
+        ),
+        function=AzureFunctionDefinitionFunction(
+            name="GetWeather",
+            description="Get the current weather in a location.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "The city or town."}
+                },
+                "required": ["location"],
+            },
+        ),
+    )
+)
+
+# Create the agent with the tool attached
+agent = project.agents.create_version(
+    agent_name="azure-function-agent-get-weather",
+    definition=PromptAgentDefinition(
+        model=MODEL,
+        instructions="You are a helpful support agent. When asked about the weather, use the GetWeather tool.",
+        tools=[tool],
+    ),
+)
+</code></pre></li>
+<li><p>Run the script:</p>
 <pre><code class="language-powershell">python ask_the_agent.py
 </code></pre>
 <blockquote class="ok"><p><strong>Observed Output</strong>:<br>
@@ -392,63 +240,56 @@ pip install "azure-ai-projects>=2.0.0" azure-identity python-dotenv
 <code>Agent: It's currently 19°C and sunny in Melbourne.</code><br>
 <code>(took 8.2s including the queue round-trip)</code><br><br>
 <code>Deleted azure-function-agent-get-weather version 1</code></p></blockquote>
-<p><strong>Proof the tool executed</strong>: The function computes <code>len(location) + 10</code>. "Sydney" has 6 letters (16°C) and "Melbourne" has 9 letters (19°C). Those numbers came from your serverless code, not the LLM's imagination!</p></li>
-<li><p>Query Application Insights trace logs to inspect the actual queue messages:</p>
-<pre><code class="language-powershell">az monitor app-insights query --app YOUR_APP_INSIGHTS_NAME -g rg-azfn-agent-lab `
-  --analytics-query "traces | where message startswith 'Message from agent' or message startswith 'Reply to agent' | project timestamp, message | order by timestamp asc" -o json
-</code></pre>
-<blockquote class="ok"><p><strong>Verified Log Row</strong>:<br>
-<code>Message from agent: {"function_args": {"location": "Sydney"}, "function_name": "GetWeather", "CorrelationId": "deYD1Ev..."}</code><br>
-<code>Reply to agent: {"Value": "It is 16 degrees and sunny in Sydney.", "CorrelationId": "deYD1Ev..."}</code></p></blockquote></li>
+<p><strong>How you know the tool ran</strong>: In <code>function_app.py</code>, the function calculates <code>len(location) + 10</code>. "Sydney" has 6 letters (16°C) and "Melbourne" has 9 letters (19°C). Those numbers came from your serverless function code, not the LLM!</p></li>
 </ol>
 
-<h2 id="task-9-clean-up">Task 9: Clean up resources</h2>
-<p>Always tear down the provisioned resources when you finish your testing. The <code>--purge</code> parameter is essential because it permanently destroys the Azure AI Services account to recover your model's quota:</p>
+<h2 id="task-6-clean-up">Task 6: Clean up resources</h2>
+<p>When you are finished testing, delete the provisioned Azure resources to avoid ongoing costs. The <code>--purge</code> option permanently deletes the AI Services account to immediately release model quota:</p>
 <pre><code class="language-powershell">azd down --purge --no-prompt
 </code></pre>
+<blockquote class="ok"><p><strong>Check</strong>: Output confirms all Azure resources have been deleted.</p></blockquote>
 
 <h2 id="knowledge-check">Knowledge check</h2>
-<details class="kc"><summary>1. What role does azure.yaml play in an azd project?</summary>
+<details class="kc"><summary>1. What does the azd init --template command do?</summary>
 <ul>
-  <li>A. It is an alternative to Python virtual environments</li>
-  <li>B. It is the project manifest that maps application services to local source directories and defines their Azure hosting targets</li>
-  <li>C. It configures the user prompt instructions</li>
+  <li>A. Installs Python packages</li>
+  <li>B. Clones a repository template containing azure.yaml, Bicep infrastructure files, and application code into your directory</li>
+  <li>C. Creates an Azure subscription</li>
 </ul>
-<div class="ans"><p><strong>Answer: B</strong></p><p>azure.yaml tells azd where your application code is located (e.g. ./app/) and how to package and deploy it (e.g. host: function).</p></div></details>
+<div class="ans"><p><strong>Answer: B</strong></p><p>azd init initializes your project from a starter template repository on GitHub.</p></div></details>
 
-<details class="kc"><summary>2. What is the purpose of the capability host in infra/main.bicep?</summary>
+<details class="kc"><summary>2. Why is the CorrelationId required in the Function's queue response?</summary>
 <ul>
-  <li>A. It generates API keys</li>
-  <li>B. It binds the Foundry project to customer-owned Storage, Search, and Cosmos DB, creating the Standard Setup required for queue tools</li>
-  <li>C. It compiles Python bytecode</li>
+  <li>A. To authenticate with Azure</li>
+  <li>B. So the Foundry Agent Service can match the asynchronous queue reply to the pending tool call turn</li>
+  <li>C. To format the temperature units</li>
 </ul>
-<div class="ans"><p><strong>Answer: B</strong></p><p>The capability host transforms a project into a Standard Setup, enabling the Agent Service to interact with external storage queues.</p></div></details>
+<div class="ans"><p><strong>Answer: B</strong></p><p>Because queue communication is asynchronous, CorrelationId is the only token that connects the function answer back to the agent's question.</p></div></details>
 
-<details class="kc"><summary>3. Why must the Function output message include CorrelationId?</summary>
+<details class="kc"><summary>3. Why must we use the --purge flag when running azd down?</summary>
 <ul>
-  <li>A. It is required by Python syntax</li>
-  <li>B. The Foundry Agent Service uses CorrelationId to match the asynchronous response from the queue to the pending conversation turn</li>
-  <li>C. It authenticates with Azure Functions</li>
+  <li>A. To speed up the deletion</li>
+  <li>B. To permanently delete the AI resource and recover regional token-per-minute (TPM) model quota</li>
+  <li>C. To delete the local virtual environment</li>
 </ul>
-<div class="ans"><p><strong>Answer: B</strong></p><p>Because queues are asynchronous and decoupled, the CorrelationId is the only identifier linking the function reply to the agent's turn.</p></div></details>
+<div class="ans"><p><strong>Answer: B</strong></p><p>Azure AI Services has soft-delete enabled by default. The --purge flag permanently clears it so your quota is restored immediately.</p></div></details>
 
 <h2 id="summary">Summary</h2>
-<p>You completed a comprehensive exploration of Azure Functions queue-based tool integration with Microsoft Foundry:</p>
+<p>In this exercise, you:</p>
 <ul>
-  <li>Analyzed the <code>azure.yaml</code> manifest and modular Bicep templates.</li>
-  <li>Understood what <code>azd</code> executes during <code>init</code>, <code>provision</code>, and <code>deploy</code>.</li>
-  <li>Provisioned a complete Standard Setup Foundry project with storage queues and capability hosts.</li>
-  <li>Deployed a serverless Python queue-triggered Azure Function on a Flex Consumption plan.</li>
-  <li>Defined an <code>AzureFunctionTool</code> using the Foundry SDK and verified live asynchronous execution.</li>
-  <li>Cleaned up and purged resources using <code>azd down --purge</code>.</li>
+  <li>Initialized a cloud project template using <code>azd init --template azure-functions-ai-services-agent-python</code>.</li>
+  <li>Inspected <code>azure.yaml</code>, <code>infra/main.bicep</code>, and the queue-triggered <code>app/function_app.py</code>.</li>
+  <li>Provisioned a Standard Setup Foundry environment and Flex Consumption Function App using <code>azd provision</code>.</li>
+  <li>Deployed the serverless Python code with <code>azd deploy</code>.</li>
+  <li>Created an agent with <code>AzureFunctionTool</code> and observed asynchronous tool execution via storage queues.</li>
+  <li>Tore down all resources cleanly with <code>azd down --purge</code>.</li>
 </ul>
 
 <h2 id="references">Further reading</h2>
 <ul>
   <li><a href="https://learn.microsoft.com/azure/foundry/agents/how-to/tools/azure-functions?pivots=python">Microsoft Learn: Use Azure Functions with Foundry Agent Service</a></li>
-  <li><a href="https://learn.microsoft.com/azure/developer/azure-developer-cli/overview">Azure Developer CLI (azd) Overview</a></li>
+  <li><a href="https://learn.microsoft.com/azure/developer/azure-developer-cli/overview">Azure Developer CLI (azd) Documentation</a></li>
   <li><a href="https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan">Azure Functions Flex Consumption plan</a></li>
-  <li><a href="https://learn.microsoft.com/azure/foundry/agents/concepts/standard-agent-setup">Foundry standard agent setup concepts</a></li>
 </ul>
 
 <div class="pager"><a href="https://microsoftlearning.github.io/mslearn-ai-agents/Instructions/Exercises/02-agent-custom-tools.html">&#8592; Use a custom function in an AI agent</a><a href="05-vector-index.html">Build a vector index &#8594;</a></div>
