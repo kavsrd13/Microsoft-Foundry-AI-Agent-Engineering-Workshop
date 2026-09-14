@@ -18,7 +18,7 @@
   <li><a href="#task-1-understand-architecture">Task 1: Understand the queue-based tool architecture</a></li>
   <li><a href="#task-2-deep-dive-files">Task 2: Deep dive into the Bicep and YAML files</a></li>
   <li><a href="#task-3-what-happens-azd">Task 3: What happens under the hood during azd CLI commands</a></li>
-  <li><a href="#task-4-provision-infrastructure">Task 4: Provision the Standard Setup with azd provision</a></li>
+  <li><a href="#task-4-init-and-provision">Task 4: Initialize the template with azd init and provision with azd provision</a></li>
   <li><a href="#task-5-deploy-function">Task 5: Deploy the Function App with azd deploy</a></li>
   <li><a href="#task-6-verify-rbac">Task 6: Verify identities and RBAC permissions</a></li>
   <li><a href="#task-7-build-agent-script">Task 7: Build the agent script with AzureFunctionTool</a></li>
@@ -177,6 +177,10 @@ services:
   </thead>
   <tbody>
     <tr>
+      <td><strong><code>azd init --template azure-functions-ai-services-agent-python</code></strong></td>
+      <td>Clones Microsoft's official template repository from GitHub (<code>Azure-Samples/azure-functions-ai-services-agent-python</code>). It automatically downloads <code>azure.yaml</code>, the <code>infra/</code> folder with all Bicep templates, and the <code>app/</code> folder with the Python Azure Function code into your directory, then prompts for an environment name.</td>
+    </tr>
+    <tr>
       <td><strong><code>azd env new &lt;name&gt;</code></strong></td>
       <td>Creates a hidden folder <code>.azure/&lt;name&gt;/</code> and initializes a local <code>.env</code> file. This file holds environment variables (like <code>AZURE_LOCATION</code> and <code>AZURE_SUBSCRIPTION_ID</code>) isolated to this specific deployment.</td>
     </tr>
@@ -217,16 +221,27 @@ services:
   </tbody>
 </table>
 
-<h2 id="task-4-provision-infrastructure">Task 4: Provision the Standard Setup with azd provision</h2>
+<h2 id="task-4-init-and-provision">Task 4: Initialize the template with azd init and provision with azd provision</h2>
 <ol>
 <li><p>Sign in with Azure CLI and configure <code>azd</code> to reuse your Azure CLI authentication context:</p>
 <pre><code class="language-powershell">az login
 azd config set auth.useAzCliAuth true
 azd auth login --check-status
 </code></pre></li>
-<li><p>Create a new <code>azd</code> environment and configure the target region:</p>
-<pre><code class="language-powershell">azd env new azfn-agent-lab
-azd env set AZURE_LOCATION australiaeast
+<li><p><strong>Initialize the project template from Microsoft Learn</strong>:<br>
+In Microsoft's documentation, you initialize the project in an empty folder using the <code>azd init</code> command with Microsoft's official template name:</p>
+<pre><code class="language-powershell">azd init --template azure-functions-ai-services-agent-python
+</code></pre>
+<p>When you run this command:</p>
+<ul>
+  <li><code>azd</code> contacts GitHub and clones the official Microsoft repository: <code>https://github.com/Azure-Samples/azure-functions-ai-services-agent-python</code>.</li>
+  <li>It downloads <code>azure.yaml</code>, the entire <code>infra/</code> directory of Bicep templates, and the <code>app/</code> directory containing the queue-triggered Azure Function.</li>
+  <li>It prompts you for an environment name (enter <code>azfn-agent-lab</code>).</li>
+</ul>
+<blockquote class="note"><p><strong>Workshop Note</strong>: In this repository, the template files (<code>azure.yaml</code>, <code>infra/</code>, and <code>app/</code>) are <strong>already pre-loaded</strong> inside <code>labs/06.1-azure-functions-tool</code>. If you are working directly in this lab folder, you can simply initialize your environment by running:<br>
+<code>azd env new azfn-agent-lab</code></p></blockquote></li>
+<li><p>Set your deployment region:</p>
+<pre><code class="language-powershell">azd env set AZURE_LOCATION australiaeast
 </code></pre>
 <blockquote><p><strong>Region Tip</strong>: <code>australiaeast</code>, <code>eastus2</code>, and <code>swedencentral</code> are fully supported for both Flex Consumption and Foundry models. Verify model quota with <code>az cognitiveservices usage list -l australiaeast</code>.</p></blockquote></li>
 <li><p>(Optional) Pre-validate the Bicep templates by running a local compilation test:</p>

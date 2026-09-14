@@ -33,3 +33,7 @@ __pycache__/
 **/timings.json
 **/live-*.json
 **/live-*.txt
+
+testing labs/
+venv/
+
